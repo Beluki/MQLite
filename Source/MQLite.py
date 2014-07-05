@@ -25,10 +25,46 @@ def errln(line):
     print(line, file = sys.stderr)
 
 
+# Matchers.
+
+class NoMatch(object):
+    """
+    A custom class to represent no matches.
+    Needed because None is a legitimate match.
+    """
+    pass
+
+
+_no_match = NoMatch()
+
+
+# Compiler from JSON to matchers (callables).
+
+class CompilerException(Exception):
+    pass
+
+
+class Compiler(object):
+
+    def __init__(self):
+        pass
+
+    def compile(self, pattern):
+        """
+        Compile a pattern to a matching class.
+        """
+        raise CompilerException('Unknown datatype: %s' % pattern)
+
+
 # Entry point:
 
 def main():
-    pass
+    compiler = Compiler()
+
+    match = compiler.compile([])
+    data = { 'a': 20, 'b': 30 }
+
+    print(match(pattern))
 
 
 if __name__ == '__main__':
