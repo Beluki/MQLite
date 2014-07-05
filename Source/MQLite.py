@@ -59,6 +59,28 @@ class MatchEqual(object):
         else:
             return _no_match
 
+class MatchMulti(object):
+
+    def __init__(self, matcher):
+        self.matcher = matcher
+
+    def __call__(self, data):
+        if isinstance(data, list):
+            result = []
+
+            for value in data:
+                current = self.matcher(value)
+
+                if not current is _no_match:
+                    result.append(current)
+
+            if len(result) == 0:
+                return _no_match
+
+            return result
+
+        else:
+            return self.matcher(data)
 
 class MatchEmptyDict(object):
     """
@@ -180,10 +202,10 @@ class Compiler(object):
             return self.compile_none(pattern)
 
         if type(pattern) in [bool, int, float, str]:
-            return self.compile_literal(pattern)
+            return MatchMulti(self.compile_literal(pattern))
 
         if isinstance(pattern, dict):
-            return self.compile_dict(pattern)
+            return MatchMulti(self.compile_dict(pattern))
 
         if isinstance(pattern, list):
             return self.compile_list(pattern)
@@ -234,8 +256,10 @@ class Compiler(object):
 def main():
     compiler = Compiler()
 
-    match = compiler.compile([1, 2, 3])
-    data = [1, 2, 3, 4]
+    data = [1, 2, 1]
+    pattern = None
+
+    match = compiler.compile(pattern)
 
     print(match(data))
 
