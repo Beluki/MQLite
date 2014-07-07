@@ -10,9 +10,10 @@ Pattern match JSON like you query Freebase, using a simple MQL dialect.
 import json
 import sys
 
-from argparse import ArgumentParser, RawDescriptionHelpFormatter
 from collections import OrderedDict
 from json import JSONDecoder
+
+from argparse import ArgumentParser, RawDescriptionHelpFormatter
 
 
 # Information and error messages:
@@ -27,10 +28,20 @@ def errln(line):
     print(line, file = sys.stderr)
 
 
-# Matcher classes.
+# Utils:
 
-# Matchers are callables that the compiler emits while walking the JSON nodes.
-# Each callable tests for particular data or combines other callables.
+def load_json(filepath):
+    """
+    Open filepath as UTF-8 and try to parse the content as JSON.
+    """
+    with open(filepath, encoding = 'utf-8') as descriptor:
+        return json.load(descriptor)
+
+
+# Matcher classes:
+
+# Matchers are callables that the compiler emits while walking JSON nodes.
+# Each matcher tests for particular data or combines other matchers.
 
 class NoMatch(object):
     """
@@ -54,11 +65,11 @@ class MatchEqual(object):
     """
     Matches data equal to a given value.
     """
-    def __init__(self, data):
-        self.data = data
+    def __init__(self, value):
+        self.value = value
 
     def __call__(self, data):
-        if self.data == data:
+        if data == self.value:
             return data
         else:
             return _no_match
@@ -88,8 +99,8 @@ class MatchEmptyList(object):
 
 class MatchDict(object):
     """
-    Performs matches between a compiled dict (where all values are
-    matching classes) and input data.
+    Performs matches between a compiled dict
+    (where all values are matching classes) and input data.
 
     The match succeeds if:
         - The input data is a dict.
@@ -99,7 +110,7 @@ class MatchDict(object):
     The result is a dict containing all the matching keys/values.
     """
     def __init__(self, compiled_dict):
-        self.compiled_dict = list(compiled_dict.items())
+        self.items = list(compiled_dict.items())
 
     def __call__(self, data):
 
@@ -108,13 +119,13 @@ class MatchDict(object):
             return _no_match
 
         result = {}
+        for key, matcher in self.items:
 
-        for key, matcher in self.compiled_dict:
-
+            # key present?
             if not key in data:
                 return _no_match
 
-            # try to match values:
+            # value matches?
             current = matcher(data[key])
             if current is _no_match:
                 return _no_match
@@ -126,8 +137,8 @@ class MatchDict(object):
 
 class MatchList(object):
     """
-    Performs matches between a compiled list (where all values are
-    matching classes) and input data.
+    Performs matches between a compiled list
+    (where all values are matching classes) and input data.
 
     Each value in the compiled list is considered a pattern
     and is matched against each value in the data list.
@@ -175,6 +186,8 @@ class MatchToLists(object):
         self.matcher = matcher
 
     def __call__(self, data):
+
+        # list?:
         if isinstance(data, list):
             result = []
 
@@ -184,13 +197,13 @@ class MatchToLists(object):
                 if not current is _no_match:
                     result.append(current)
 
-            if len(result) == 0:
-                return _no_match
+            if len(result) > 0:
+                return result
 
-            return result
+            return _no_match
 
-        else:
-            return self.matcher(data)
+        # fallback to the matcher behaviour otherwise:
+        return self.matcher(data)
 
 
 # Compiler from JSON to matchers (callables).
@@ -208,14 +221,27 @@ class Compiler(object):
         """
         Compile a pattern to a matching class.
         """
+
+        # this is fairly repetitive but allows compiler subclasses
+        # to override compiling behaviour for a single type:
+
         if pattern is None:
             return self.compile_none(pattern)
 
-        if type(pattern) in [bool, int, float, str]:
-            return MatchToLists(self.compile_literal(pattern))
+        if isinstance(pattern, bool):
+            return self.compile_bool(pattern)
+
+        if isinstance(pattern, int):
+            return self.compile_int(pattern)
+
+        if isinstance(pattern, float):
+            return self.compile_float(pattern)
+
+        if isinstance(pattern, str):
+            return self.compile_str(pattern)
 
         if isinstance(pattern, dict):
-            return MatchToLists(self.compile_dict(pattern))
+            return self.compile_dict(pattern)
 
         if isinstance(pattern, list):
             return self.compile_list(pattern)
@@ -228,26 +254,44 @@ class Compiler(object):
         """
         return MatchAny()
 
-    def compile_literal(self, pattern):
+    def compile_bool(self, pattern):
         """
-        Literals match themselves.
+        Booleans match themselves and allow lists as targets.
         """
-        return MatchEqual(pattern)
+        return MatchToLists(MatchEqual(pattern))
+
+    def compile_int(self, pattern):
+        """
+        Integers match themselves and allow lists as targets.
+        """
+        return MatchToLists(MatchEqual(pattern))
+
+    def compile_float(self, pattern):
+        """
+        Floats match themselves and allow lists as targets.
+        """
+        return MatchToLists(MatchEqual(pattern))
+
+    def compile_str(self, pattern):
+        """
+        Strings match themselves and allow lists as targets.
+        """
+        return MatchToLists(MatchEqual(pattern))
 
     def compile_dict(self, pattern):
         """
         Dicts are compiled into either MatchEmptyDict
-        or MatchDict classes.
+        or MatchDict classes that allow lists as targets.
         """
         if pattern == {}:
-            return MatchEmptyDict()
+            return MatchToLists(MatchEmptyDict())
 
-        compiled_dict = {}
+        compiled_dict = OrderedDict()
 
         for key, value in pattern.items():
             compiled_dict[key] = self.compile(value)
 
-        return MatchDict(compiled_dict)
+        return MatchToLists(MatchDict(compiled_dict))
 
     def compile_list(self, pattern):
         """
@@ -259,6 +303,99 @@ class Compiler(object):
 
         compiled_list = [self.compile(value) for value in pattern]
         return MatchList(compiled_list)
+
+
+# Higher-level pattern classes:
+
+class Pattern(object):
+    """
+    A raw (Python object) pattern.
+    """
+    def __init__(self, data):
+        self._compiler = Compiler()
+        self._data = data
+        self._pattern_compiled = None
+
+    def compile(self):
+        """
+        Compile this pattern.
+        """
+        self._pattern_compiled = self._compiler.compile(self._data)
+
+    def match(self, data):
+        """
+        Execute this pattern against the given data.
+        """
+        if self._pattern_compiled is None:
+            self.compile()
+
+        return self._pattern_compiled(data)
+
+
+class JSONPattern(object):
+    """
+    A JSON pattern.
+    """
+    def __init__(self, jsondata):
+        self._decoder = JSONDecoder(object_pairs_hook = OrderedDict)
+        self._jsondata = jsondata
+        self._pattern_decoded = None
+
+    def decode(self):
+        """
+        Decode the JSON.
+        """
+        self._pattern_decoded = Pattern(self._decoder.decode(self._jsondata))
+
+    def match(self, data):
+        """
+        Execute this pattern against the given data.
+        """
+        if self._pattern_decoded is None:
+            self.decode()
+
+        return self._pattern_decoded.match(data)
+
+
+# A simple read-eval-print-loop:
+
+class REPL(object):
+
+    def __init__(self, data, indent = 4, sort_keys = False):
+        self.data = data
+        self.prompt = '>>> '
+        self.indent = indent
+        self.sort_keys = sort_keys
+
+    def _read_eval_print(self):
+        """
+        Parse, execute and print the result of a given pattern.
+        """
+        text = input(self.prompt)
+
+        if text:
+            result = JSONPattern(text).match(self.data)
+
+            if not result is _no_match:
+                outln(json.dumps(result, indent = self.indent, sort_keys = self.sort_keys))
+
+    def run(self):
+        """
+        Start the read-eval-print-loop.
+        """
+        while True:
+            try:
+                self._read_eval_print()
+
+            except EOFError:
+                break
+
+            except KeyboardInterrupt:
+                errln('')
+                errln('KeyboardInterrupt')
+
+            except Exception as err:
+                errln('Error: ' + str(err))
 
 
 # Parser:
@@ -273,86 +410,9 @@ def make_parser():
     # optional:
     parser.add_argument('filepath',
         help = 'run a repl with filepath as the JSON data',
-        metavar = 'filepath', nargs = '?')
+        metavar = 'filepath')
 
     return parser
-
-
-# REPL:
-
-class REPL(object):
-
-    def __init__(self, filepath):
-        self.compiler = Compiler()
-        self.decoder = JSONDecoder(object_pairs_hook = OrderedDict)
-        self.filepath = filepath
-        self.data = None
-        self.prompt = '>>>'
-        self.indent = 2
-
-        self.commands = {
-            'load': self.load_data,
-        }
-
-    def load_data(self, filepath):
-        """
-        Change the current file to pattern match against.
-        """
-        try:
-            with open(filepath) as descriptor:
-                self.data = self.decoder.decode(descriptor.read())
-                self.filepath = filepath
-
-        except Exception as err:
-            errln('Unable to load: %s - %s' % (filepath, str(err)))
-
-    def execute_metacommand(self, text):
-        """
-        """
-        parts = text.split(maxsplit = 1)
-
-        command = parts[0]
-        parameters = parts[1:]
-
-        if command in self.commands:
-            self.commands[command](*parameters)
-
-    def execute_pattern(self, pattern):
-        """
-        Parse/compile a pattern and run it against our data.
-        """
-        if self.data is None:
-            errln('No data loaded.')
-            return
-
-        try:
-            parsed = json.loads(pattern)
-            compiled = self.compiler.compile(parsed)
-
-            result = compiled(self.data)
-
-            if result is _no_match:
-                outln('No results.')
-            else:
-                outln(json.dumps(result, indent = self.indent))
-
-        except Exception as err:
-            errln('Unable to execute: %s' % str(err))
-
-    def run(self):
-        """
-        Run an interactive read-eval-print-loop.
-        """
-        self.load_data(self.filepath)
-
-        while True:
-            text = input(str(self.filepath) + " " + str(self.prompt) + " ")
-
-            if text.startswith(','):
-                command = text[1:]
-                self.execute_metacommand(command)
-            else:
-                self.execute_pattern(text)
 
 
 # Entry point:
@@ -361,7 +421,17 @@ def main():
     parser = make_parser()
     options = parser.parse_args()
 
-    REPL(options.filepath).run()
+    data = None
+
+    try:
+        data = load_json(options.filepath)
+
+    except Exception as err:
+        errln(str(err))
+        sys.exit(1)
+
+    repl = REPL(data)
+    repl.run()
 
 
 if __name__ == '__main__':
