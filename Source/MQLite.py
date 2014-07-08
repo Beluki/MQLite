@@ -8,6 +8,7 @@ Pattern match JSON like you query Freebase, using a simple MQL dialect.
 
 
 import json
+import pprint
 import sys
 
 from collections import OrderedDict
@@ -30,7 +31,7 @@ def errln(line):
 
 # Utils:
 
-def load_json(filepath):
+def read_json_file(filepath):
     """
     Open filepath as UTF-8 and try to parse the content as JSON.
     """
@@ -187,7 +188,7 @@ class MatchToLists(object):
 
     def __call__(self, data):
 
-        # list?:
+        # list?
         if isinstance(data, list):
             result = []
 
@@ -361,31 +362,64 @@ class JSONPattern(object):
 
 class REPL(object):
 
-    def __init__(self, data, indent = 4, sort_keys = False):
+    def __init__(self, data):
         self.data = data
+
+        self.intro = 'MQLite interactive shell (CONTROL + Z to exit)'
+
         self.prompt = '>>> '
-        self.indent = indent
-        self.sort_keys = sort_keys
+        self.prompt_paging = ''
 
-    def _read_eval_print(self):
+        self.paging_lines = 24
+
+        self.dump_mode = 'json'
+        self.dump_indent = 4
+        self.dump_sort_keys = False
+
+    def eval_pattern(self, text):
         """
-        Parse, execute and print the result of a given pattern.
+        Parse and execute a given pattern against our data.
         """
-        text = input(self.prompt)
+        return JSONPattern(text).match(self.data)
 
-        if text:
-            result = JSONPattern(text).match(self.data)
+    def dump_json(self, jsondata):
+        """
+        Dump jsondata as text, according to our output mode.
+        """
+        if self.dump_mode == 'json':
+            return json.dumps(jsondata, indent = self.dump_indent, sort_keys = self.dump_sort_keys)
 
-            if not result is _no_match:
-                outln(json.dumps(result, indent = self.indent, sort_keys = self.sort_keys))
+        if self.dump_mode == 'pprint':
+            return pprint.pformat(jsondata, indent = self.dump_indent)
+
+    def print_json(self, jsondata):
+        """
+        Print text as JSON to stdout.
+        """
+        text = self.dump_json(jsondata)
+
+        for index, line in enumerate(text.splitlines()):
+            outln(line)
+
+            if self.paging_lines > 0:
+                if ((index + 1) % self.paging_lines) == 0:
+                    input(self.prompt_paging)
 
     def run(self):
         """
         Start the read-eval-print-loop.
         """
+        outln(self.intro)
+
         while True:
             try:
-                self._read_eval_print()
+                line = input(self.prompt)
+
+                if line:
+                    result = self.eval_pattern(line)
+
+                    if not result is _no_match:
+                        self.print_json(result)
 
             except EOFError:
                 break
@@ -424,7 +458,7 @@ def main():
     data = None
 
     try:
-        data = load_json(options.filepath)
+        data = read_json_file(options.filepath)
 
     except Exception as err:
         errln(str(err))
