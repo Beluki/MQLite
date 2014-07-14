@@ -54,6 +54,8 @@ class NoMatch(object):
 _no_match = NoMatch()
 
 
+# Single:
+
 class MatchAny(object):
     """
     Matches any input data.
@@ -76,6 +78,8 @@ class MatchEqual(object):
             return _no_match
 
 
+# Empty collections:
+
 class MatchEmptyDict(object):
     """
     Matches an empty dictionary.
@@ -97,6 +101,8 @@ class MatchEmptyList(object):
         else:
             return _no_match
 
+
+# Populated collections:
 
 class MatchDict(object):
     """
@@ -176,6 +182,8 @@ class MatchList(object):
 
         return result
 
+
+# Combinators:
 
 class MatchToLists(object):
     """
@@ -358,23 +366,38 @@ class JSONPattern(object):
         return self._pattern_decoded.match(data)
 
 
+# A JSON formatter that can use either json.dumps or pprint:
+
+class JSONFormatter(object):
+
+    def __init__(self, mode, indent, sort_keys):
+        self.mode = mode
+        self.indent = indent
+        self.sort_keys = sort_keys
+
+    def dump(self, data):
+        if self.mode == 'json':
+            return json.dumps(data, indent = self.indent, sort_keys = self.sort_keys)
+
+        if self.mode == 'pprint':
+            return pprint.pformat(data, indent = self.indent)
+
+        raise ValueError('Unknown mode: %s' % self.mode)
+
+
 # A simple read-eval-print-loop:
 
 class REPL(object):
 
-    def __init__(self, data):
+    def __init__(self, data, formatter, paging = 24):
         self.data = data
+        self.formatter = formatter
 
         self.intro = 'MQLite interactive shell (CONTROL + Z to exit)'
-
         self.prompt = '>>> '
         self.prompt_paging = ''
 
-        self.paging_lines = 24
-
-        self.dump_mode = 'json'
-        self.dump_indent = 4
-        self.dump_sort_keys = False
+        self.paging = paging
 
     def eval_pattern(self, text):
         """
@@ -382,27 +405,17 @@ class REPL(object):
         """
         return JSONPattern(text).match(self.data)
 
-    def dump_json(self, jsondata):
-        """
-        Dump jsondata as text, according to our output mode.
-        """
-        if self.dump_mode == 'json':
-            return json.dumps(jsondata, indent = self.dump_indent, sort_keys = self.dump_sort_keys)
-
-        if self.dump_mode == 'pprint':
-            return pprint.pformat(jsondata, indent = self.dump_indent)
-
     def print_json(self, jsondata):
         """
         Print text as JSON to stdout.
         """
-        text = self.dump_json(jsondata)
+        text = self.formatter.dump(jsondata)
 
         for index, line in enumerate(text.splitlines()):
             outln(line)
 
-            if self.paging_lines > 0:
-                if ((index + 1) % self.paging_lines) == 0:
+            if self.paging > 0:
+                if ((index + 1) % self.paging) == 0:
                     input(self.prompt_paging)
 
     def run(self):
@@ -441,10 +454,37 @@ def make_parser():
         epilog = 'example: MQLite.py [file.json]',
         usage  = 'MQLite.py [filepath]')
 
-    # optional:
+    # required:
     parser.add_argument('filepath',
         help = 'run a repl with filepath as the JSON data',
         metavar = 'filepath')
+
+    # printing:
+    group_printing = parser.add_argument_group(title = 'Printing options')
+
+    group_printing.add_argument('--mode',
+        help = 'format to use when printing results',
+        choices = ['json', 'pprint'],
+        default = 'json')
+
+    group_printing.add_argument('--indent',
+        help = 'spaces of indentation',
+        metavar = 'number',
+        type = int,
+        default = 4)
+
+    group_printing.add_argument('--sort-keys',
+        help = 'print dictionary keys in alphabetical order',
+        action = 'store_true')
+
+    # repl:
+    group_repl = parser.add_argument_group(title = 'REPL options')
+
+    group_repl.add_argument('--paging',
+        help = 'lines per output page (0 to disable)',
+        metavar = 'number',
+        type = int,
+        default = 24)
 
     return parser
 
@@ -464,7 +504,8 @@ def main():
         errln(str(err))
         sys.exit(1)
 
-    repl = REPL(data)
+    formatter = JSONFormatter(options.mode, options.indent, options.sort_keys)
+    repl = REPL(data, formatter, options.paging)
     repl.run()
 
 
