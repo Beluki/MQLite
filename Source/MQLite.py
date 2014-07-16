@@ -29,20 +29,11 @@ def errln(line):
     print(line, file = sys.stderr)
 
 
-# Utils:
+# Matchers:
 
-def read_json_file(filepath):
-    """
-    Open filepath as UTF-8 and try to parse the content as JSON.
-    """
-    with open(filepath, encoding = 'utf-8') as descriptor:
-        return json.load(descriptor)
-
-
-# Matcher classes:
-
-# Matchers are callables that the compiler emits while walking JSON nodes.
-# Each matcher tests for particular data or combines other matchers.
+# Matchers are classes that the compiler emits to test input data.
+# Each matcher implements a "match" method that returns the data
+# or a NoMatch instance depending on whether the test succeeded or not.
 
 class NoMatch(object):
     """
@@ -58,33 +49,33 @@ _no_match = NoMatch()
 
 class MatchAny(object):
     """
-    Matches any input data.
+    Match any input data.
     """
-    def __call__(self, data):
+    def match(self, data):
         return data
 
 
 class MatchEqual(object):
     """
-    Matches data equal to a given value.
+    Match data equal to a given value.
     """
     def __init__(self, value):
         self.value = value
 
-    def __call__(self, data):
-        if data == self.value:
+    def match(self, data):
+        if self.value == data:
             return data
-        else:
-            return _no_match
+
+        return _no_match
 
 
 # Empty collections:
 
 class MatchEmptyDict(object):
     """
-    Matches an empty dictionary.
+    Match an empty dictionary.
     """
-    def __call__(self, data):
+    def match(self, data):
         if data == {}:
             return data
         else:
@@ -93,9 +84,9 @@ class MatchEmptyDict(object):
 
 class MatchEmptyList(object):
     """
-    Matches an empty list.
+    Match an empty list.
     """
-    def __call__(self, data):
+    def match(self, data):
         if data == []:
             return data
         else:
@@ -106,7 +97,7 @@ class MatchEmptyList(object):
 
 class MatchDict(object):
     """
-    Performs matches between a compiled dict
+    Perform matches between a compiled dict
     (where all values are matching classes) and input data.
 
     The match succeeds if:
@@ -119,7 +110,7 @@ class MatchDict(object):
     def __init__(self, compiled_dict):
         self.items = list(compiled_dict.items())
 
-    def __call__(self, data):
+    def match(self, data):
 
         # not a dict?
         if not isinstance(data, dict):
@@ -133,7 +124,7 @@ class MatchDict(object):
                 return _no_match
 
             # value matches?
-            current = matcher(data[key])
+            current = matcher.match(data[key])
             if current is _no_match:
                 return _no_match
 
@@ -144,11 +135,8 @@ class MatchDict(object):
 
 class MatchList(object):
     """
-    Performs matches between a compiled list
+    Perform matches between a compiled list
     (where all values are matching classes) and input data.
-
-    Each value in the compiled list is considered a pattern
-    and is matched against each value in the data list.
 
     The match suceeds if:
         - The input data is a list.
@@ -159,7 +147,7 @@ class MatchList(object):
     def __init__(self, compiled_list):
         self.compiled_list = compiled_list
 
-    def __call__(self, data):
+    def match(self, data):
 
         # not a list?
         if not isinstance(data, list):
@@ -170,7 +158,7 @@ class MatchList(object):
             matched = False
 
             for value in data:
-                current = matcher(value)
+                current = matcher.match(value)
 
                 if not current is _no_match:
                     matched = True
@@ -187,21 +175,20 @@ class MatchList(object):
 
 class MatchToLists(object):
     """
-    Wraps a matching class so that when used against a list
-    it tries to match every element and return the matching results.
-    The match succeeds if any of the list elements matches.
+    Wrap a matcher so that it can be mapped over a list.
+    The match succeeds if at least one of the list elements matches.
     """
     def __init__(self, matcher):
         self.matcher = matcher
 
-    def __call__(self, data):
+    def match(self, data):
 
         # list?
         if isinstance(data, list):
             result = []
 
             for value in data:
-                current = self.matcher(value)
+                current = self.matcher.match(value)
 
                 if not current is _no_match:
                     result.append(current)
@@ -212,7 +199,7 @@ class MatchToLists(object):
             return _no_match
 
         # fallback to the matcher behaviour otherwise:
-        return self.matcher(data)
+        return self.matcher.match(data)
 
 
 # Compiler from JSON to matchers (callables).
@@ -338,7 +325,7 @@ class Pattern(object):
         if self._pattern_compiled is None:
             self.compile()
 
-        return self._pattern_compiled(data)
+        return self._pattern_compiled.match(data)
 
 
 class JSONPattern(object):
@@ -366,23 +353,32 @@ class JSONPattern(object):
         return self._pattern_decoded.match(data)
 
 
-# A JSON formatter that can use either json.dumps or pprint:
+# Utils:
 
 class JSONFormatter(object):
-
-    def __init__(self, mode, indent, sort_keys):
+    """
+    A JSON formatter that can use either json or pprint.
+    """
+    def __init__(self, mode, indent):
         self.mode = mode
         self.indent = indent
-        self.sort_keys = sort_keys
 
     def dump(self, data):
         if self.mode == 'json':
-            return json.dumps(data, indent = self.indent, sort_keys = self.sort_keys)
+            return json.dumps(data, indent = self.indent)
 
         if self.mode == 'pprint':
             return pprint.pformat(data, indent = self.indent)
 
         raise ValueError('Unknown mode: %s' % self.mode)
+
+
+def read_json_file(filepath):
+    """
+    Open filepath as UTF-8 and try to parse the content as JSON.
+    """
+    with open(filepath, encoding = 'utf-8') as descriptor:
+        return json.load(descriptor)
 
 
 # A simple read-eval-print-loop:
@@ -473,10 +469,6 @@ def make_parser():
         type = int,
         default = 4)
 
-    group_printing.add_argument('--sort-keys',
-        help = 'print dictionary keys in alphabetical order',
-        action = 'store_true')
-
     # repl:
     group_repl = parser.add_argument_group(title = 'REPL options')
 
@@ -504,7 +496,7 @@ def main():
         errln(str(err))
         sys.exit(1)
 
-    formatter = JSONFormatter(options.mode, options.indent, options.sort_keys)
+    formatter = JSONFormatter(options.mode, options.indent)
     repl = REPL(data, formatter, options.paging)
     repl.run()
 
