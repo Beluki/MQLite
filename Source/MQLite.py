@@ -8,7 +8,6 @@ Pattern match JSON like you query Freebase, using a simple MQL dialect.
 
 
 import json
-import pprint
 import sys
 
 from collections import OrderedDict
@@ -20,13 +19,27 @@ from argparse import ArgumentParser, RawDescriptionHelpFormatter
 # Information and error messages:
 
 def outln(line):
-    """ Write 'line' to stdout, using UTF-8 and platform newline. """
+    """ Write 'line' to stdout, using the platform encoding and newline format. """
     print(line)
 
 
 def errln(line):
-    """ Write 'line' to stderr, using UTF-8 and platform newline. """
+    """ Write 'line' to stderr, using the platform encoding and newline format. """
     print(line, file = sys.stderr)
+
+
+# IO utils:
+
+def binary_stdin_read_utf8():
+    """ Read from stdin as UTF-8. """
+    content = sys.stdin.buffer.read()
+    return content.decode('utf-8')
+
+
+def binary_stdout_write_utf8(text):
+    """ Write to stdout as UTF-8. """
+    sys.stdout.buffer.write(text.encode('utf-8'))
+    sys.stdout.flush()
 
 
 # Matchers:
@@ -35,17 +48,17 @@ def errln(line):
 # Each matcher implements a "match" method that returns the data
 # or a NoMatch instance depending on whether the test succeeded or not.
 
-class NoMatch(object):
+class _NoMatch(object):
     """
     A custom class to represent no matches.
     Needed because None is a legitimate match.
     """
     pass
 
-_no_match = NoMatch()
+NoMatch = _NoMatch()
 
 
-# Single:
+# Simple matchers:
 
 class MatchAny(object):
     """
@@ -65,11 +78,12 @@ class MatchEqual(object):
     def match(self, data):
         if self.value == data:
             return data
-
-        return _no_match
+        else:
+            return NoMatch
 
 
 # Empty collections:
+# (those are just an optimization to avoid loops in the common case)
 
 class MatchEmptyDict(object):
     """
@@ -79,7 +93,7 @@ class MatchEmptyDict(object):
         if data == {}:
             return data
         else:
-            return _no_match
+            return NoMatch
 
 
 class MatchEmptyList(object):
@@ -90,7 +104,7 @@ class MatchEmptyList(object):
         if data == []:
             return data
         else:
-            return _no_match
+            return NoMatch
 
 
 # Populated collections:
@@ -114,19 +128,20 @@ class MatchDict(object):
 
         # not a dict?
         if not isinstance(data, dict):
-            return _no_match
+            return NoMatch
 
         result = {}
         for key, matcher in self.items:
 
             # key present?
             if not key in data:
-                return _no_match
+                return NoMatch
+
+            current = matcher.match(data[key])
 
             # value matches?
-            current = matcher.match(data[key])
-            if current is _no_match:
-                return _no_match
+            if current is NoMatch:
+                return NoMatch
 
             result[key] = current
 
@@ -140,7 +155,7 @@ class MatchList(object):
 
     The match suceeds if:
         - The input data is a list.
-        - Each pattern matches at least one element in the input data.
+        - Each value matches at least one element in the input data.
 
     The result is a list containing all the matches.
     """
@@ -151,7 +166,7 @@ class MatchList(object):
 
         # not a list?
         if not isinstance(data, list):
-            return _no_match
+            return NoMatch
 
         result = []
         for matcher in self.compiled_list:
@@ -160,18 +175,19 @@ class MatchList(object):
             for value in data:
                 current = matcher.match(value)
 
-                if not current is _no_match:
+                if not current is NoMatch:
                     matched = True
                     result.append(current)
 
-            # at least one match is required:
+            # at least one match?
             if not matched:
-                return _no_match
+                return NoMatch
 
         return result
 
 
-# Combinators:
+# Wrappers:
+
 
 class MatchToLists(object):
     """
@@ -190,19 +206,20 @@ class MatchToLists(object):
             for value in data:
                 current = self.matcher.match(value)
 
-                if not current is _no_match:
+                if not current is NoMatch:
                     result.append(current)
 
-            if len(result) > 0:
-                return result
+            # at least one match?
+            if len(result) == 0:
+                return NoMatch
 
-            return _no_match
+            return result
 
-        # fallback to the matcher behaviour otherwise:
+        # fall back to the matcher behaviour:
         return self.matcher.match(data)
 
 
-# Compiler from JSON to matchers (callables).
+# Compiler from JSON to matchers:
 
 class CompilerException(Exception):
     pass
@@ -218,7 +235,7 @@ class Compiler(object):
         Compile a pattern to a matching class.
         """
 
-        # this is fairly repetitive but allows compiler subclasses
+        # repetitive but allows compiler subclasses
         # to override compiling behaviour for a single type:
 
         if pattern is None:
@@ -242,7 +259,7 @@ class Compiler(object):
         if isinstance(pattern, list):
             return self.compile_list(pattern)
 
-        raise CompilerException('Unknown datatype: %s' % pattern)
+        raise CompilerException('Unknown type: %s' % pattern)
 
     def compile_none(self, pattern):
         """
@@ -277,7 +294,7 @@ class Compiler(object):
     def compile_dict(self, pattern):
         """
         Dicts are compiled into either MatchEmptyDict
-        or MatchDict classes that allow lists as targets.
+        or MatchDict instances that allow lists as targets.
         """
         if pattern == {}:
             return MatchToLists(MatchEmptyDict())
@@ -292,7 +309,7 @@ class Compiler(object):
     def compile_list(self, pattern):
         """
         Lists are compiled into either MatchEmptyList
-        or MatchList classes.
+        or MatchList instances.
         """
         if pattern == []:
             return MatchEmptyList()
@@ -353,130 +370,18 @@ class JSONPattern(object):
         return self._pattern_decoded.match(data)
 
 
-# Utils:
-
-class JSONFormatter(object):
-    """
-    A JSON formatter that can use either json or pprint.
-    """
-    def __init__(self, mode, indent):
-        self.mode = mode
-        self.indent = indent
-
-    def dump(self, data):
-        if self.mode == 'json':
-            return json.dumps(data, indent = self.indent)
-
-        if self.mode == 'pprint':
-            return pprint.pformat(data, indent = self.indent)
-
-        raise ValueError('Unknown mode: %s' % self.mode)
-
-
-def read_json_file(filepath):
-    """
-    Open filepath as UTF-8 and try to parse the content as JSON.
-    """
-    with open(filepath, encoding = 'utf-8') as descriptor:
-        return json.load(descriptor)
-
-
-# A simple read-eval-print-loop:
-
-class REPL(object):
-
-    def __init__(self, data, formatter, paging = 24):
-        self.data = data
-        self.formatter = formatter
-
-        self.intro = 'MQLite interactive shell (CONTROL + Z to exit)'
-        self.prompt = '>>> '
-        self.prompt_paging = ''
-
-        self.paging = paging
-
-    def eval_pattern(self, text):
-        """
-        Parse and execute a given pattern against our data.
-        """
-        return JSONPattern(text).match(self.data)
-
-    def print_json(self, jsondata):
-        """
-        Print text as JSON to stdout.
-        """
-        text = self.formatter.dump(jsondata)
-
-        for index, line in enumerate(text.splitlines()):
-            outln(line)
-
-            if self.paging > 0:
-                if ((index + 1) % self.paging) == 0:
-                    input(self.prompt_paging)
-
-    def run(self):
-        """
-        Start the read-eval-print-loop.
-        """
-        outln(self.intro)
-
-        while True:
-            try:
-                line = input(self.prompt)
-
-                if line:
-                    result = self.eval_pattern(line)
-
-                    if not result is _no_match:
-                        self.print_json(result)
-
-            except EOFError:
-                break
-
-            except KeyboardInterrupt:
-                errln('')
-                errln('KeyboardInterrupt')
-
-            except Exception as err:
-                errln('Error: ' + str(err))
-
-
 # Parser:
 
 def make_parser():
     parser = ArgumentParser(
         description = __doc__,
         formatter_class = RawDescriptionHelpFormatter,
-        epilog = 'example: MQLite.py [file.json]',
-        usage  = 'MQLite.py [filepath]')
+        usage  = 'MQLite.py pattern')
 
     # required:
-    parser.add_argument('filepath',
-        help = 'run a repl with filepath as the JSON data',
-        metavar = 'filepath')
-
-    # printing:
-    group_printing = parser.add_argument_group(title = 'Printing options')
-
-    group_printing.add_argument('--mode',
-        help = 'format to use when printing results',
-        choices = ['json', 'pprint'],
-        default = 'json')
-
-    group_printing.add_argument('--indent',
-        help = 'spaces of indentation',
-        metavar = 'number',
-        type = int,
-        default = 4)
-
-    # repl:
-    group_repl = parser.add_argument_group(title = 'REPL options')
-
-    group_repl.add_argument('--paging',
-        help = 'lines per output page (0 to disable)',
-        metavar = 'number',
-        type = int,
-        default = 24)
+    parser.add_argument('pattern',
+        help = 'JSON pattern to match against stdin',
+        metavar = 'pattern')
 
     return parser
 
@@ -487,18 +392,19 @@ def main():
     parser = make_parser()
     options = parser.parse_args()
 
-    data = None
-
     try:
-        data = read_json_file(options.filepath)
+        data = binary_stdin_read_utf8()
+        datajson = json.loads(data)
+
+        result = JSONPattern(options.pattern).match(datajson)
+
+        if not result is NoMatch:
+            resultjson = json.dumps(result)
+            binary_stdout_write_utf8(resultjson)
 
     except Exception as err:
         errln(str(err))
         sys.exit(1)
-
-    formatter = JSONFormatter(options.mode, options.indent)
-    repl = REPL(data, formatter, options.paging)
-    repl.run()
 
 
 if __name__ == '__main__':
