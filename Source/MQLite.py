@@ -13,40 +13,14 @@ import sys
 from collections import OrderedDict
 from json import JSONDecoder
 
-from argparse import ArgumentParser, RawDescriptionHelpFormatter
 
-
-# Information and error messages:
-
-def outln(line):
-    """ Write 'line' to stdout, using the platform encoding and newline format. """
-    print(line)
-
-
-def errln(line):
-    """ Write 'line' to stderr, using the platform encoding and newline format. """
-    print(line, file = sys.stderr)
-
-
-# IO utils:
-
-def binary_stdin_read_utf8():
-    """ Read from stdin as UTF-8. """
-    content = sys.stdin.buffer.read()
-    return content.decode('utf-8')
-
-
-def binary_stdout_write_utf8(text):
-    """ Write to stdout as UTF-8. """
-    sys.stdout.buffer.write(text.encode('utf-8'))
-    sys.stdout.flush()
-
+# API:
 
 # Matchers:
 
 # Matchers are classes that the compiler emits to test input data.
 # Each matcher implements a "match" method that returns the data
-# or a NoMatch instance depending on whether the test succeeded or not.
+# or NoMatch depending on whether the test succeeded or not.
 
 class _NoMatch(object):
     """
@@ -187,7 +161,6 @@ class MatchList(object):
 
 
 # Wrappers:
-
 
 class MatchToLists(object):
     """
@@ -368,6 +341,37 @@ class JSONPattern(object):
             self.decode()
 
         return self._pattern_decoded.match(data)
+
+
+# Program (e.g. python -m MQLite ...)
+
+from argparse import ArgumentParser, RawDescriptionHelpFormatter
+
+
+# Information and error messages:
+
+def outln(line):
+    """ Write 'line' to stdout, using the platform encoding and newline format. """
+    print(line)
+
+
+def errln(line):
+    """ Write 'line' to stderr, using the platform encoding and newline format. """
+    print(line, file = sys.stderr)
+
+
+# IO utils:
+
+def binary_stdin_read_utf8():
+    """ Read from stdin as UTF-8. """
+    content = sys.stdin.buffer.read()
+    return content.decode('utf-8')
+
+
+def binary_stdout_write_utf8(text):
+    """ Write to stdout as UTF-8. """
+    sys.stdout.buffer.write(text.encode('utf-8'))
+    sys.stdout.flush()
 
 
 # Parser:
