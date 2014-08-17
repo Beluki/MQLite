@@ -363,9 +363,9 @@ def errln(line):
 # IO utils:
 
 def binary_stdin_read_utf8():
-    """ Read from stdin as UTF-8. """
+    """ Read from stdin as UTF-8 (allowing an optional BOM). """
     content = sys.stdin.buffer.read()
-    return content.decode('utf-8')
+    return content.decode('utf-8-sig')
 
 
 def binary_stdout_write_utf8(text):
