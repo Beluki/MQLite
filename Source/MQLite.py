@@ -388,6 +388,10 @@ def make_parser():
         metavar = 'pattern')
 
     # optional:
+    parser.add_argument('--ascii',
+        help = 'escape non-ascii characters in output',
+        action = 'store_true')
+
     parser.add_argument('--strict',
         help = 'exit with an error message and status 1 when no match',
         action = 'store_true')
@@ -412,7 +416,7 @@ def main():
                 errln('error: no match')
                 sys.exit(1)
         else:
-            resultjson = json.dumps(result)
+            resultjson = json.dumps(result, ensure_ascii = options.ascii)
             binary_stdout_write_utf8(resultjson)
 
     except Exception as err:
