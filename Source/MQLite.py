@@ -387,6 +387,11 @@ def make_parser():
         help = 'JSON pattern to match against stdin',
         metavar = 'pattern')
 
+    # optional:
+    parser.add_argument('--strict',
+        help = 'exit with an error message and status 1 when no match',
+        action = 'store_true')
+
     return parser
 
 
@@ -402,7 +407,11 @@ def main():
 
         result = JSONPattern(options.pattern).match(datajson)
 
-        if not result is NoMatch:
+        if result is NoMatch:
+            if options.strict:
+                errln('error: no match')
+                sys.exit(1)
+        else:
             resultjson = json.dumps(result)
             binary_stdout_write_utf8(resultjson)
 
