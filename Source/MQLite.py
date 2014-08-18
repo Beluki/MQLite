@@ -369,7 +369,7 @@ def binary_stdout_write_utf8(text):
 class JSONFormatter(object):
     """
     A helper to print JSON to stdout in a desired format.
-    It's just a wrapper over json.dumps().
+    It's just a wrapper over json.dumps() with configurable newlines.
     """
     def __init__(self, ensure_ascii, indent, sort_keys, newline):
         self.ensure_ascii = ensure_ascii
@@ -378,19 +378,24 @@ class JSONFormatter(object):
         self.newline = newline
 
     def dump(self, jsondata):
-        return json.dumps(jsondata, ensure_ascii = self.ensure_ascii,
+        """
+        Serialize jsondata to a JSON formatted string
+        using the formatter settings.
+        """
+        text = json.dumps(jsondata, ensure_ascii = self.ensure_ascii,
             indent = self.indent, sort_keys = self.sort_keys)
-
-    def stdout(self, jsondata):
 
         # if not indenting, there are no newlines:
         if self.indent is None:
-            binary_stdout_write_utf8(self.dump(jsondata))
-
-        # otherwise, convert newlines:
+            return text
         else:
-            text = self.newline.join(self.dump(jsondata).splitlines())
-            binary_stdout_write_utf8(text)
+            return self.newline.join(text.splitlines())
+
+    def stdout(self, jsondata):
+        """
+        Serialize jsondata and print the result to stdout.
+        """
+        binary_stdout_write_utf8(self.dump(jsondata))
 
 
 # Program (e.g. python -m MQLite ...)
@@ -416,12 +421,12 @@ def make_parser():
     parser = ArgumentParser(
         description = __doc__,
         formatter_class = RawDescriptionHelpFormatter,
-        usage  = 'MQLite.py pattern')
+        usage  = 'MQLite.py pattern [option [options ...]]')
 
     # required:
     parser.add_argument('pattern',
         help = 'JSON pattern to match against stdin',
-        metavar = 'pattern [option [options ...]]')
+        metavar = 'pattern')
 
     # optional:
     parser.add_argument('--strict',
