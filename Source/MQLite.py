@@ -8,6 +8,7 @@ Pattern match JSON like you query Freebase, using a simple MQL dialect.
 
 
 import json
+import os
 import sys
 
 from collections import OrderedDict
@@ -343,6 +344,55 @@ class JSONPattern(object):
         return self._pattern_decoded.match(data)
 
 
+# IO utils and formatting JSON:
+# (part of the API because the shell will use them too)
+
+NEWLINES = {
+    'dos'    : '\r\n',
+    'mac'    : '\r',
+    'unix'   : '\n',
+    'system' : os.linesep,
+}
+
+
+def binary_stdin_read_utf8():
+    """ Read from stdin as UTF-8 (allowing an optional BOM). """
+    content = sys.stdin.buffer.read()
+    return content.decode('utf-8-sig')
+
+
+def binary_stdout_write_utf8(text):
+    """ Write to stdout as UTF-8. """
+    sys.stdout.buffer.write(text.encode('utf-8'))
+
+
+class JSONFormatter(object):
+    """
+    A helper to print JSON to stdout in a desired format.
+    It's just a wrapper over json.dumps().
+    """
+    def __init__(self, ensure_ascii, indent, sort_keys, newline):
+        self.ensure_ascii = ensure_ascii
+        self.indent = indent
+        self.sort_keys = sort_keys
+        self.newline = newline
+
+    def dump(self, jsondata):
+        return json.dumps(jsondata, ensure_ascii = self.ensure_ascii,
+            indent = self.indent, sort_keys = self.sort_keys)
+
+    def stdout(self, jsondata):
+
+        # if not indenting, there are no newlines:
+        if self.indent is None:
+            binary_stdout_write_utf8(self.dump(jsondata))
+
+        # otherwise, convert newlines:
+        else:
+            text = self.newline.join(self.dump(jsondata).splitlines())
+            binary_stdout_write_utf8(text)
+
+
 # Program (e.g. python -m MQLite ...)
 
 from argparse import ArgumentParser, RawDescriptionHelpFormatter
@@ -360,20 +410,6 @@ def errln(line):
     print(line, file = sys.stderr)
 
 
-# IO utils:
-
-def binary_stdin_read_utf8():
-    """ Read from stdin as UTF-8 (allowing an optional BOM). """
-    content = sys.stdin.buffer.read()
-    return content.decode('utf-8-sig')
-
-
-def binary_stdout_write_utf8(text):
-    """ Write to stdout as UTF-8. """
-    sys.stdout.buffer.write(text.encode('utf-8'))
-    sys.stdout.flush()
-
-
 # Parser:
 
 def make_parser():
@@ -385,16 +421,34 @@ def make_parser():
     # required:
     parser.add_argument('pattern',
         help = 'JSON pattern to match against stdin',
-        metavar = 'pattern')
+        metavar = 'pattern [option [options ...]]')
 
     # optional:
-    parser.add_argument('--ascii',
-        help = 'escape non-ascii characters in output',
-        action = 'store_true')
-
     parser.add_argument('--strict',
         help = 'exit with an error message and status 1 when no match',
         action = 'store_true')
+
+    # optional, output format:
+    output_format = parser.add_argument_group('output format')
+
+    output_format.add_argument('--ascii',
+        help = 'escape non-ascii characters',
+        action = 'store_true')
+
+    output_format.add_argument('--indent',
+        help = 'use N spaces of indentation (-1 to disable)',
+        metavar = 'N',
+        type = int,
+        default = 4)
+
+    output_format.add_argument('--sort-keys',
+        help = 'sort dictionaries by key before printing',
+        action = 'store_true')
+
+    output_format.add_argument('--newline',
+        help = 'use a specific newline mode (default: system)',
+        choices = ['dos', 'mac', 'unix', 'system'],
+        default = 'system')
 
     return parser
 
@@ -404,6 +458,12 @@ def make_parser():
 def main():
     parser = make_parser()
     options = parser.parse_args()
+
+    newline = NEWLINES[options.newline]
+    indent = options.indent
+
+    if options.indent < 0:
+        indent = None
 
     try:
         data = binary_stdin_read_utf8()
@@ -416,8 +476,8 @@ def main():
                 errln('error: no match')
                 sys.exit(1)
         else:
-            resultjson = json.dumps(result, ensure_ascii = options.ascii)
-            binary_stdout_write_utf8(resultjson)
+            formatter = JSONFormatter(options.ascii, indent, options.sort_keys, newline)
+            formatter.stdout(result)
 
     except Exception as err:
         errln(str(err))
