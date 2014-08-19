@@ -9,6 +9,7 @@ Pattern match JSON like you query Freebase, using a simple MQL dialect.
 
 import json
 import os
+import re
 import sys
 
 from collections import OrderedDict
@@ -354,6 +355,8 @@ NEWLINES = {
     'system' : os.linesep,
 }
 
+NEWLINES_RE = re.compile('|'.join(NEWLINES.values()))
+
 
 def binary_stdin_read_utf8():
     """ Read from stdin as UTF-8 (allowing an optional BOM). """
@@ -364,6 +367,14 @@ def binary_stdin_read_utf8():
 def binary_stdout_write_utf8(text):
     """ Write to stdout as UTF-8. """
     sys.stdout.buffer.write(text.encode('utf-8'))
+
+
+def replace_newlines(text, newline):
+    """
+    Replace all newline characters in 'text' with 'newline'.
+    Only \r\n, \r, \n and os.linesep are considered.
+    """
+    return re.sub(NEWLINES_RE, newline, text)
 
 
 class JSONFormatter(object):
@@ -388,8 +399,17 @@ class JSONFormatter(object):
         # if not indenting, there are no newlines:
         if self.indent is None:
             return text
+
+        # JSON strings can't contain control characters, so this is safe.
+        # However, U+2028 line separator and U+2029 paragraph separator
+        # are allowed so never use text.splitlines() here.
+
+        # We could use text.replace('\n', self.newline) due to the fact
+        # that json.dumps() always uses '\n' for newlines. I prefer not to
+        # depend on this behavior, since it's not documented.
+
         else:
-            return self.newline.join(text.splitlines())
+            return replace_newlines(text, self.newline)
 
     def stdout(self, jsondata):
         """
