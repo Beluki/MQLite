@@ -391,8 +391,13 @@ class JSONFormatter(object):
 
         # JSON strings can't contain control characters, so this is safe.
         # (U+2028 line separator and U+2029 paragraph separator are allowed)
-        # Also, json.dumps() always uses '\n' for newlines.
         else:
+
+            # json.dumps() always uses '\n' for newlines, but let's do
+            # a sanity check just in case the implementation changes:
+            if '\r' in text:
+                raise ValueError('Internal error: CR from json.dumps()')
+
             return text.replace('\n', self.newline)
 
     def stdout(self, jsondata):
