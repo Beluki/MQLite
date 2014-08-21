@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-MQLite.
+MQLiteSH.
 An interactive shell for MQLite.
 """
 
@@ -36,9 +36,28 @@ except ImportError:
     sys.exit(1)
 
 
+# Parser:
+
+def make_parser():
+    parser = ArgumentParser(
+        description = __doc__,
+        formatter_class = RawDescriptionHelpFormatter,
+        usage  = 'MQLiteSH.py filepath [option [options ...]]')
+
+    # required:
+    parser.add_argument('filepath',
+        help = 'JSON file to use as input data on the REPL',
+        metavar = 'filepath')
+
+    return parser
+
+
 # Entry point:
 
 def main():
+    parser = make_parser()
+    options = parser.parse_args()
+
     pass
 
 
