@@ -362,7 +362,7 @@ def binary_stdin_read_utf8():
 
 
 def binary_stdout_write_utf8(text):
-    """ Write to stdout as UTF-8. """
+    """ Write 'text' to stdout as UTF-8. """
     sys.stdout.buffer.write(text.encode('utf-8'))
 
 

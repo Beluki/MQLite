@@ -4,7 +4,7 @@ from setuptools import setup
 
 setup(
     name = 'MQLite',
-    version = '2014.08.19',
+    version = '2014.08.21',
     url = 'https://github.com/Beluki/MQLite',
     license = 'See Documentation/License',
     author = 'Beluki',
