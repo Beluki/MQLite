@@ -18,12 +18,12 @@ from argparse import ArgumentParser, RawDescriptionHelpFormatter
 
 def outln(line):
     """ Write 'line' to stdout, using the platform encoding and newline format. """
-    print(line)
+    print(line, flush = True)
 
 
 def errln(line):
     """ Write 'line' to stderr, using the platform encoding and newline format. """
-    print(line, file = sys.stderr)
+    print('MQLiteSH.py: error:', line, file = sys.stderr, flush = True)
 
 
 # Non-builtin imports:
@@ -33,7 +33,7 @@ try:
 
 except ImportError:
     errln('MQLiteSH requires the following modules:')
-    errln('MQLite 2014.08.21+ - <https://github.com/Beluki/MQLite>')
+    errln('MQLite 2015.02.04+ - <https://github.com/Beluki/MQLite>')
     sys.exit(1)
 
 
@@ -75,9 +75,10 @@ class REPL(object):
         """
         Start the read-eval-print-loop.
         """
-        outln(self.intro)
+        print(self.intro)
 
         while True:
+            # evaluate one line:
             try:
                 line = input(self.prompt)
 
@@ -86,17 +87,19 @@ class REPL(object):
 
                     if not result is NoMatch:
                         self.print_json(result)
-                        outln('')
+                        print('')
 
+            # CONTROL + Z: exit
             except EOFError:
                 break
 
+            # CONTROL + C: stop
             except KeyboardInterrupt:
-                errln('')
-                errln('KeyboardInterrupt')
+                print('\nKeyboardInterrupt', file = sys.stderr)
 
+            # other exception: print and continue
             except Exception as err:
-                errln('Error: ' + str(err))
+                print('Error:', str(err), file = sys.stderr)
 
 
 # Parser:
