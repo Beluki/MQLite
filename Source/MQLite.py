@@ -233,7 +233,7 @@ class Compiler(object):
         if isinstance(pattern, list):
             return self.compile_list(pattern)
 
-        raise CompilerException('Unknown type: %s' % pattern)
+        raise CompilerException('Unknown type: {}'.format(pattern))
 
     def compile_none(self, pattern):
         """
@@ -363,7 +363,8 @@ def binary_stdin_read_utf8():
 
 def binary_stdout_write_utf8(text):
     """ Write 'text' to stdout as UTF-8. """
-    sys.stdout.buffer.write(text.encode('utf-8'))
+    content = text.encode('utf-8')
+    sys.stdout.buffer.write(content)
 
 
 class JSONFormatter(object):
@@ -416,12 +417,12 @@ from argparse import ArgumentParser, RawDescriptionHelpFormatter
 
 def outln(line):
     """ Write 'line' to stdout, using the platform encoding and newline format. """
-    print(line)
+    print(line, flush = True)
 
 
 def errln(line):
     """ Write 'line' to stderr, using the platform encoding and newline format. """
-    print(line, file = sys.stderr)
+    print('MQLite.py: error:', line, file = sys.stderr, flush = True)
 
 
 # Parser:
