@@ -9,13 +9,12 @@ Pattern match JSON like you query Freebase, using a simple MQL dialect.
 
 import json
 import os
+import re
 import sys
 
 from collections import OrderedDict
 from json import JSONDecoder
 
-
-# API:
 
 # Matchers:
 
@@ -86,18 +85,19 @@ class MatchEmptyList(object):
 
 class MatchDict(object):
     """
-    Perform matches between a compiled dict
-    (where all values are matching classes) and input data.
+    Perform matches between a matchers and a constraints dict
+    and input data.
 
     The match succeeds if:
         - The input data is a dict.
-        - All keys in the input dict are present in the input data.
-        - All values for those keys match.
+        - All the constraints match.
+        - All the matchers match.
 
     The result is a dict containing all the matching keys/values.
     """
-    def __init__(self, compiled_dict):
-        self.items = list(compiled_dict.items())
+    def __init__(self, matcher_dict, constraint_dict):
+        self.matcher_items = list(matcher_dict.items())
+        self.constraint_items = list(constraint_dict.items())
 
     def match(self, data):
 
@@ -105,16 +105,21 @@ class MatchDict(object):
         if not isinstance(data, dict):
             return NoMatch
 
-        result = {}
-        for key, matcher in self.items:
+        # constraints match?
+        for key, constraint in self.constraint_items:
+            if key in data and constraint.match(data[key]):
+                continue
+            else:
+                return NoMatch
 
-            # key present?
+        # matchers match?
+        result = {}
+        for key, matcher in self.matcher_items:
             if not key in data:
                 return NoMatch
 
             current = matcher.match(data[key])
 
-            # value matches?
             if current is NoMatch:
                 return NoMatch
 
@@ -125,17 +130,16 @@ class MatchDict(object):
 
 class MatchList(object):
     """
-    Perform matches between a compiled list
-    (where all values are matching classes) and input data.
+    Perform matches between a matchers list and input data.
 
     The match suceeds if:
         - The input data is a list.
-        - Each value matches at least one element in the input data.
+        - Each matcher matches at least one element in the input data.
 
     The result is a list containing all the matches.
     """
-    def __init__(self, compiled_list):
-        self.compiled_list = compiled_list
+    def __init__(self, matcher_list):
+        self.matcher_list = matcher_list
 
     def match(self, data):
 
@@ -144,24 +148,131 @@ class MatchList(object):
             return NoMatch
 
         result = []
-        for matcher in self.compiled_list:
-            matched = False
+        for matcher in self.matcher_list:
+            at_least_one_match = False
 
             for value in data:
                 current = matcher.match(value)
 
                 if not current is NoMatch:
-                    matched = True
+                    at_least_one_match = True
                     result.append(current)
 
             # at least one match?
-            if not matched:
+            if not at_least_one_match:
                 return NoMatch
 
         return result
 
 
-# Wrappers:
+# Constraints:
+
+# Like matchers, constraints are classes that the compiler emits.
+# Unlike matchers, constraints just return True or False instead
+# of the data/NoMatch.
+
+
+class ConstraintMoreThan(object):
+    """
+    Matches data bigger than a particular value.
+    (operator > in both MQL and MQLite)
+    """
+    def __init__(self, value):
+        self.value = value
+
+    def match(self, data):
+        return data > self.value
+
+
+class ConstraintMoreOrEqualTo(object):
+    """
+    Matches data bigger or equal to a particular value.
+    (operator >= in both MQL and MQLite)
+    """
+    def __init__(self, value):
+        self.value = value
+
+    def match(self, data):
+        return data >= self.value
+
+
+class ConstraintLessThan(object):
+    """
+    Matches data smaller than a particular value.
+    (operator < in both MQL and MQLite)
+    """
+    def __init__(self, value):
+        self.value = value
+
+    def match(self, data):
+        return data < self.value
+
+
+class ConstraintLessOrEqualTo(object):
+    """
+    Matches data smaller or equal to a particular value.
+    (operator <= in both MQL and MQLite)
+    """
+    def __init__(self, value):
+        self.value = value
+
+    def match(self, data):
+        return data <= self.value
+
+
+class ConstraintEqualTo(object):
+    """
+    Matches data equal to a particular value.
+    (operator == in MQLite, not present in MQL)
+    """
+    def __init__(self, value):
+        self.value = value
+
+    def match(self, data):
+        return data == self.value
+
+
+class ConstraintNotEqualTo(object):
+    """
+    Matches data not equal to a particular value.
+    (operator != in both MQL and MQLite)
+    """
+    def __init__(self, value):
+        self.value = value
+
+    def match(self, data):
+        return data != self.value
+
+
+class ConstraintRegex(object):
+    """
+    Matches data against a regular expression.
+    (operator ~= in both MQL and MQLite)
+    """
+    def __init__(self, regex):
+        self.regex = regex
+
+    def match(self, data):
+        return re.match(self.regex, data) is not None
+
+
+class ConstraintOneOf(object):
+    """
+    Matches data against a list of values.
+    (operator |= in both MQL and MQLite)
+    """
+    def __init__(self, values):
+        self.values = values
+
+    def match(self, data):
+        for value in self.values:
+            if value == data:
+                return True
+
+        return False
+
+
+# Wrappers: matchers
 
 class MatchToLists(object):
     """
@@ -184,13 +295,50 @@ class MatchToLists(object):
                     result.append(current)
 
             # at least one match?
-            if len(result) == 0:
+            if len(result) > 0:
+                return result
+            else:
                 return NoMatch
-
-            return result
 
         # fall back to the matcher behaviour:
         return self.matcher.match(data)
+
+
+# Wrappers: constraints
+
+class ConstraintToLists(object):
+    """
+    Wrap a constraint so that it can be mapped over a list.
+    The constraint succeeds if at least one of the list elements matches.
+    """
+    def __init__(self, constraint):
+        self.constraint = constraint
+
+    def match(self, data):
+
+        # list?
+        if isinstance(data, list):
+            for value in data:
+                if self.constraint.match(value):
+                    return True
+
+            return False
+
+        # fall back to the matcher behaviour:
+        return self.constraint.match(data)
+
+
+class ConstraintsAnd(object):
+    """
+    Combines two constraints returning True/False depending
+    on whether both match.
+    """
+    def __init__(self, constraint_a, constraint_b):
+        self.constraint_a = constraint_a
+        self.constraint_b = constraint_b
+
+    def match(self, data):
+        return self.constraint_a.match(data) and self.constraint_b.match(data)
 
 
 # Compiler from JSON to matchers:
@@ -201,6 +349,17 @@ class CompilerException(Exception):
 
 class Compiler(object):
 
+    constraints = {
+        '>'  :  ConstraintMoreThan,
+        '>=' :  ConstraintMoreOrEqualTo,
+        '<'  :  ConstraintLessThan,
+        '<=' :  ConstraintLessOrEqualTo,
+        '==' :  ConstraintEqualTo,
+        '!=' :  ConstraintNotEqualTo,
+        '~=' :  ConstraintRegex,
+        '|=' :  ConstraintOneOf,
+    }
+
     def __init__(self):
         pass
 
@@ -208,7 +367,6 @@ class Compiler(object):
         """
         Compile a pattern to a matching class.
         """
-
         # repetitive but allows compiler subclasses
         # to override compiling behaviour for a single type:
 
@@ -243,53 +401,80 @@ class Compiler(object):
 
     def compile_bool(self, pattern):
         """
-        Booleans match themselves and allow lists as targets.
+        Booleans match themselves or lists containing themselves.
         """
         return MatchToLists(MatchEqual(pattern))
 
     def compile_int(self, pattern):
         """
-        Integers match themselves and allow lists as targets.
+        Integers match themselves or lists containing themselves.
         """
         return MatchToLists(MatchEqual(pattern))
 
     def compile_float(self, pattern):
         """
-        Floats match themselves and allow lists as targets.
+        Floats match themselves or lists containing themselves.
         """
         return MatchToLists(MatchEqual(pattern))
 
     def compile_str(self, pattern):
         """
-        Strings match themselves and allow lists as targets.
+        Strings match themselves or lists containing themselves.
         """
         return MatchToLists(MatchEqual(pattern))
 
     def compile_dict(self, pattern):
         """
-        Dicts are compiled into either MatchEmptyDict
-        or MatchDict instances that allow lists as targets.
+        Dicts are compiled into either MatchEmptyDict or MatchDict instances
+        wrapped with MatchToLists.
         """
+        # optimize empty patterns:
         if pattern == {}:
             return MatchToLists(MatchEmptyDict())
 
-        compiled_dict = OrderedDict()
+        matcher_dict = OrderedDict()
+        constraint_dict = OrderedDict()
 
         for key, value in pattern.items():
-            compiled_dict[key] = self.compile(value)
 
-        return MatchToLists(MatchDict(compiled_dict))
+            # constraint?
+            is_constraint = False
+            constraint_parts = key.rsplit(' ', 1)
+
+            if len(constraint_parts) == 2:
+                constraint_key, constraint_name = constraint_parts
+
+                # known constraint?
+                if constraint_name in self.constraints:
+                    constraint = self.constraints[constraint_name](value)
+
+                    # key already in the dict? combine with ConstraintsAnd:
+                    if constraint_key in constraint_dict:
+                        constraint = ConstraintsAnd(constraint, constraint_dict[constraint_key])
+
+                    constraint_dict[constraint_key] = constraint
+                    is_constraint = True
+
+            # regular matcher:
+            if not is_constraint:
+                matcher_dict[key] = self.compile(value)
+
+        # wrap all constraints with ConstraintToLists:
+        constraint_dict = { key: ConstraintToLists(value) for key, value in constraint_dict.items() }
+
+        # wrap the final MatchDict with MatchToLists:
+        return MatchToLists(MatchDict(matcher_dict, constraint_dict))
 
     def compile_list(self, pattern):
         """
-        Lists are compiled into either MatchEmptyList
-        or MatchList instances.
+        Lists are compiled into either MatchEmptyList or MatchList instances.
         """
+        # optimize empty patterns:
         if pattern == []:
             return MatchEmptyList()
 
-        compiled_list = [self.compile(value) for value in pattern]
-        return MatchList(compiled_list)
+        matcher_list = [self.compile(value) for value in pattern]
+        return MatchList(matcher_list)
 
 
 # Higher-level pattern classes:
