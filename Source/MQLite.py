@@ -16,11 +16,15 @@ from collections import OrderedDict
 from json import JSONDecoder
 
 
-# Matchers:
+# Nodes:
+# The MQLite compiler emits various kinds of nodes.
+# All of them implement a "match" method that tests data
+# or combines other nodes to do so.
 
-# Matchers are classes that the compiler emits to test input data.
-# Each matcher implements a "match" method that returns the data
-# or NoMatch depending on whether the test succeeded or not.
+
+# Matchers:
+# Nodes that return the data or NoMatch depending on a test.
+# Used to implement the basic pattern matching behavior.
 
 class _NoMatch(object):
     """
@@ -31,8 +35,6 @@ class _NoMatch(object):
 
 NoMatch = _NoMatch()
 
-
-# Simple matchers:
 
 class MatchAny(object):
     """
@@ -56,9 +58,6 @@ class MatchEqual(object):
             return NoMatch
 
 
-# Empty collections:
-# (those are just an optimization to avoid loops in the common case)
-
 class MatchEmptyDict(object):
     """
     Match an empty dictionary.
@@ -81,8 +80,6 @@ class MatchEmptyList(object):
             return NoMatch
 
 
-# Populated collections:
-
 class MatchDict(object):
     """
     Perform matches between a matchers and a constraints dict
@@ -95,9 +92,12 @@ class MatchDict(object):
 
     The result is a dict containing all the matching keys/values.
     """
-    def __init__(self, matcher_dict, constraint_dict):
-        self.matcher_items = list(matcher_dict.items())
-        self.constraint_items = list(constraint_dict.items())
+    def __init__(self, matchers, constraints, directives, optional_keys, include_all_keys):
+        self.matchers = list(matchers.items())
+        self.constraints = list(constraints.items())
+        self.directives = directives
+        self.optional_keys = optional_keys
+        self.include_all_keys = include_all_keys
 
     def match(self, data):
 
@@ -106,24 +106,31 @@ class MatchDict(object):
             return NoMatch
 
         # constraints match?
-        for key, constraint in self.constraint_items:
-            if key in data and constraint.match(data[key]):
-                continue
-            else:
+        for key, constraint in self.constraints:
+            if not key in data or not constraint.match(data[key]):
                 return NoMatch
 
         # matchers match?
         result = {}
-        for key, matcher in self.matcher_items:
+        for key, matcher in self.matchers:
             if not key in data:
                 return NoMatch
 
             current = matcher.match(data[key])
 
             if current is NoMatch:
-                return NoMatch
+                if key in self.optional_keys:
+                    result[key] = None
+                else:
+                    return NoMatch
+            else:
+                result[key] = current
 
-            result[key] = current
+        # add all the data keys to the result if needed:
+        if self.include_all_keys:
+            for key, value in data.items():
+                if not key in result:
+                    result[key] = value
 
         return result
 
@@ -138,8 +145,8 @@ class MatchList(object):
 
     The result is a list containing all the matches.
     """
-    def __init__(self, matcher_list):
-        self.matcher_list = matcher_list
+    def __init__(self, matchers):
+        self.matchers = matchers
 
     def match(self, data):
 
@@ -148,34 +155,38 @@ class MatchList(object):
             return NoMatch
 
         result = []
-        for matcher in self.matcher_list:
-            at_least_one_match = False
+        for matcher in self.matchers:
 
+            # collect results for the current matcher:
+            matcher_results = []
             for value in data:
                 current = matcher.match(value)
 
-                if not current is NoMatch:
-                    at_least_one_match = True
-                    result.append(current)
+                if current is not NoMatch:
+                    matcher_results.append(current)
 
             # at least one match?
-            if not at_least_one_match:
+            if len(matcher_results) == 0:
                 return NoMatch
+
+            # apply directives for dictionaries:
+            if isinstance(matcher, MatchDict):
+                for directive in matcher.directives:
+                    matcher_results = directive.match(matcher_results)
+
+            result += matcher_results
 
         return result
 
 
 # Constraints:
-
-# Like matchers, constraints are classes that the compiler emits.
-# Unlike matchers, constraints just return True or False instead
-# of the data/NoMatch.
-
+# Nodes that test a property of the data and return True or False.
+# Used to implement operators such as >, <, ...
 
 class ConstraintMoreThan(object):
     """
-    Matches data bigger than a particular value.
-    (operator > in both MQL and MQLite)
+    Tests that the data is bigger than a particular value.
+    (operator > in MQLite)
     """
     def __init__(self, value):
         self.value = value
@@ -186,8 +197,8 @@ class ConstraintMoreThan(object):
 
 class ConstraintMoreOrEqualTo(object):
     """
-    Matches data bigger or equal to a particular value.
-    (operator >= in both MQL and MQLite)
+    Tests that the data is bigger or equal to a particular value.
+    (operator >= in MQLite)
     """
     def __init__(self, value):
         self.value = value
@@ -198,8 +209,8 @@ class ConstraintMoreOrEqualTo(object):
 
 class ConstraintLessThan(object):
     """
-    Matches data smaller than a particular value.
-    (operator < in both MQL and MQLite)
+    Tests that the data is smaller than a particular value.
+    (operator < in MQLite)
     """
     def __init__(self, value):
         self.value = value
@@ -210,8 +221,8 @@ class ConstraintLessThan(object):
 
 class ConstraintLessOrEqualTo(object):
     """
-    Matches data smaller or equal to a particular value.
-    (operator <= in both MQL and MQLite)
+    Tests that the data is smaller or equal to a particular value.
+    (operator <= in MQLite)
     """
     def __init__(self, value):
         self.value = value
@@ -222,8 +233,8 @@ class ConstraintLessOrEqualTo(object):
 
 class ConstraintEqualTo(object):
     """
-    Matches data equal to a particular value.
-    (operator == in MQLite, not present in MQL)
+    Tests that the data is equal to a particular value.
+    (operator == in MQLite)
     """
     def __init__(self, value):
         self.value = value
@@ -234,8 +245,8 @@ class ConstraintEqualTo(object):
 
 class ConstraintNotEqualTo(object):
     """
-    Matches data not equal to a particular value.
-    (operator != in both MQL and MQLite)
+    Tests that the data is not equal to a particular value.
+    (operator != in MQLite)
     """
     def __init__(self, value):
         self.value = value
@@ -246,8 +257,8 @@ class ConstraintNotEqualTo(object):
 
 class ConstraintRegex(object):
     """
-    Matches data against a regular expression.
-    (operator ~= in both MQL and MQLite)
+    Tests that the data matches a regular expression.
+    (operator "regex" in MQLite)
     """
     def __init__(self, regex):
         self.regex = regex
@@ -256,82 +267,103 @@ class ConstraintRegex(object):
         return re.match(self.regex, data) is not None
 
 
-class ConstraintOneOf(object):
+class ConstraintNotRegex(object):
     """
-    Matches data against a list of values.
-    (operator |= in both MQL and MQLite)
+    Tests that the data does NOT match a regular expression.
+    (operator "!regex" in MQLite)
+    """
+    def __init__(self, regex):
+        self.regex = regex
+
+    def match(self, data):
+        return re.match(self.regex, data) is None
+
+
+class ConstraintIn(object):
+    """
+    Tests that the data is equal to at least one element of a list of values.
+    (operator "in" in MQLite)
     """
     def __init__(self, values):
         self.values = values
 
     def match(self, data):
-        for value in self.values:
-            if value == data:
-                return True
-
-        return False
+        return data in self.values
 
 
-# Wrappers: matchers
-
-class MatchToLists(object):
+class ConstraintNotIn(object):
     """
-    Wrap a matcher so that it can be mapped over a list.
-    The match succeeds if at least one of the list elements matches.
+    Tests that the data is not equal to any of a list of values.
+    (operator "!in" in MQLite)
     """
-    def __init__(self, matcher):
-        self.matcher = matcher
+    def __init__(self, values):
+        self.values = values
 
     def match(self, data):
-
-        # list?
-        if isinstance(data, list):
-            result = []
-
-            for value in data:
-                current = self.matcher.match(value)
-
-                if not current is NoMatch:
-                    result.append(current)
-
-            # at least one match?
-            if len(result) > 0:
-                return result
-            else:
-                return NoMatch
-
-        # fall back to the matcher behaviour:
-        return self.matcher.match(data)
+        return data not in self.values
 
 
-# Wrappers: constraints
-
-class ConstraintToLists(object):
+class ConstraintContain(object):
     """
-    Wrap a constraint so that it can be mapped over a list.
-    The constraint succeeds if at least one of the list elements matches.
+    Tests that the data contains one value.
+    (operator "contain" in MQLite)
     """
-    def __init__(self, constraint):
-        self.constraint = constraint
+    def __init__(self, value):
+        self.value = value
 
     def match(self, data):
-
-        # list?
-        if isinstance(data, list):
-            for value in data:
-                if self.constraint.match(value):
-                    return True
-
-            return False
-
-        # fall back to the matcher behaviour:
-        return self.constraint.match(data)
+        return self.value in data
 
 
-class ConstraintsAnd(object):
+class ConstraintNotContain(object):
     """
-    Combines two constraints returning True/False depending
-    on whether both match.
+    Tests that the data does NOT contain a value.
+    (operator "!contain" in MQLite)
+    """
+    def __init__(self, value):
+        self.value = value
+
+    def match(self, data):
+        return self.value not in data
+
+
+# Directives:
+# Nodes that transform the data into something else.
+
+class DirectiveLimit(object):
+    """
+    Take at most N elements from data.
+    """
+    def __init__(self, limit):
+        self.limit = limit
+
+    def match(self, data):
+        return data[0: self.limit]
+
+
+class DirectiveSortByKey(object):
+    """
+    Sort dictionaries by a given key.
+    """
+    def __init__(self, key):
+        if len(key) > 1 and key.startswith('-'):
+            self.reverse = True
+            self.key = key[1:]
+        else:
+            self.reverse = False
+            self.key = key
+
+    def match(self, data):
+        return sorted(data, key = lambda value: value[self.key], reverse = self.reverse)
+
+
+# Wrappers:
+# Take nodes as arguments and modify/combine their behaviour.
+
+class WrapConstraintsAnd(object):
+    """
+    Combine two constraints into a single one
+    returning True/False depending on whether both match.
     """
     def __init__(self, constraint_a, constraint_b):
         self.constraint_a = constraint_a
@@ -341,23 +373,34 @@ class ConstraintsAnd(object):
         return self.constraint_a.match(data) and self.constraint_b.match(data)
 
 
-# Compiler from JSON to matchers:
+# Compiler:
 
 class CompilerException(Exception):
     pass
 
 
 class Compiler(object):
-
+    """
+    The MQLite compiler.
+    """
     constraints = {
-        '>'  :  ConstraintMoreThan,
-        '>=' :  ConstraintMoreOrEqualTo,
-        '<'  :  ConstraintLessThan,
-        '<=' :  ConstraintLessOrEqualTo,
-        '==' :  ConstraintEqualTo,
-        '!=' :  ConstraintNotEqualTo,
-        '~=' :  ConstraintRegex,
-        '|=' :  ConstraintOneOf,
+        '>'        :  ConstraintMoreThan,
+        '>='       :  ConstraintMoreOrEqualTo,
+        '<'        :  ConstraintLessThan,
+        '<='       :  ConstraintLessOrEqualTo,
+        '=='       :  ConstraintEqualTo,
+        '!='       :  ConstraintNotEqualTo,
+        'regex'    :  ConstraintRegex,
+        '!regex'   :  ConstraintNotRegex,
+        'in'       :  ConstraintIn,
+        '!in'      :  ConstraintNotIn,
+        'contain'  :  ConstraintContain,
+        '!contain' :  ConstraintNotContain,
+    }
+
+    directives = {
+        '__limit__' : DirectiveLimit,
+        '__sort__'  : DirectiveSortByKey,
     }
 
     def __init__(self):
@@ -401,41 +444,51 @@ class Compiler(object):
 
     def compile_bool(self, pattern):
         """
-        Booleans match themselves or lists containing themselves.
+        Booleans match themselves.
         """
-        return MatchToLists(MatchEqual(pattern))
+        return MatchEqual(pattern)
 
     def compile_int(self, pattern):
         """
-        Integers match themselves or lists containing themselves.
+        Integers match themselves.
         """
-        return MatchToLists(MatchEqual(pattern))
+        return MatchEqual(pattern)
 
     def compile_float(self, pattern):
         """
-        Floats match themselves or lists containing themselves.
+        Floats match themselves.
         """
-        return MatchToLists(MatchEqual(pattern))
+        return MatchEqual(pattern)
 
     def compile_str(self, pattern):
         """
-        Strings match themselves or lists containing themselves.
+        Strings match themselves.
         """
-        return MatchToLists(MatchEqual(pattern))
+        return MatchEqual(pattern)
 
     def compile_dict(self, pattern):
         """
-        Dicts are compiled into either MatchEmptyDict or MatchDict instances
-        wrapped with MatchToLists.
+        Dicts are compiled into either MatchEmptyDict or MatchDict instances.
         """
         # optimize empty patterns:
         if pattern == {}:
-            return MatchToLists(MatchEmptyDict())
+            return MatchEmptyDict()
 
-        matcher_dict = OrderedDict()
-        constraint_dict = OrderedDict()
+        matchers = OrderedDict()
+        constraints = OrderedDict()
+        directives = []
+
+        optional_keys = set()
+        include_all_keys = False
 
         for key, value in pattern.items():
+
+            # directive?
+            is_directive = False
+            if key in self.directives:
+                directive = self.directives[key](value)
+                directives.append(directive)
+                is_directive = True
 
             # constraint?
             is_constraint = False
@@ -448,22 +501,32 @@ class Compiler(object):
                 if constraint_name in self.constraints:
                     constraint = self.constraints[constraint_name](value)
 
-                    # key already in the dict? combine with ConstraintsAnd:
-                    if constraint_key in constraint_dict:
-                        constraint = ConstraintsAnd(constraint, constraint_dict[constraint_key])
+                    # key already in the dict? combine with the previous constraint:
+                    if constraint_key in constraints:
+                        constraint = WrapConstraintsAnd(constraint, constraints[constraint_key])
 
-                    constraint_dict[constraint_key] = constraint
+                    constraints[constraint_key] = constraint
                     is_constraint = True
 
             # regular matcher:
-            if not is_constraint:
-                matcher_dict[key] = self.compile(value)
+            if not is_directive and not is_constraint:
 
-        # wrap all constraints with ConstraintToLists:
-        constraint_dict = { key: ConstraintToLists(value) for key, value in constraint_dict.items() }
+                # all keys?
+                if key == value == '*':
+                    include_all_keys = True
+                    continue
 
-        # wrap the final MatchDict with MatchToLists:
-        return MatchToLists(MatchDict(matcher_dict, constraint_dict))
+                # optional?
+                if len(key) > 1 and key.endswith('?'):
+                    key = key[:-1]
+                    optional_keys.add(key)
+                    matchers[key] = self.compile(value)
+                    continue
+
+                # normal key/value match:
+                matchers[key] = self.compile(value)
+
+        return MatchDict(matchers, constraints, directives, optional_keys, include_all_keys)
 
     def compile_list(self, pattern):
         """
@@ -473,8 +536,8 @@ class Compiler(object):
         if pattern == []:
             return MatchEmptyList()
 
-        matcher_list = [self.compile(value) for value in pattern]
-        return MatchList(matcher_list)
+        matchers = [self.compile(value) for value in pattern]
+        return MatchList(matchers)
 
 
 # Higher-level pattern classes:

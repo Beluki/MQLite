@@ -1,6 +1,21 @@
 
 CHANGELOG
 
+* 2015/02/07:
+
+    - Major operators overhaul.
+
+      The full set is now:
+          >, >=, <, <=, ==, !=, regex, !regex, in, !in, contain, !contain
+
+    - Added directives: __limit__ and __sort__ for dictionaries.
+      Sorting can be reversed using { "__sort__": "-key" }.
+
+    - Added wildcards: key? (optional match) and "*": "*", which
+      returns all the keys/values in the current dict.
+
+    - Matchers/Constraints are no longer wrapped with (Match/Constraint)ToLists.
+
 * 2015/02/05:
 
     - Added operators: >, >=, <, <=, ==, !=, ~=, |=.
