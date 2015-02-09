@@ -1,5 +1,22 @@
 [
-    {"name": "Anna", "age": 23, "hobbies": ["reading", "chess", "swimming"] },
-    {"name": "James", "age": 25, "hobbies": ["chess", "football", "basketball"] },
-    {"name": "John", "age": 35, "hobbies": ["reading", "swimming", "painting"] }
+    {
+        "name": "Anna",
+        "age": 23,
+        "student": true,
+        "grades": [{ "chemistry": "A", "math": "C" }],
+        "hobbies": ["reading", "chess", "swimming"]
+    },
+    {
+        "name": "James",
+        "age": 25,
+        "student": false,
+        "hobbies": ["chess", "football", "basketball"]
+    },
+    {
+        "name": "John",
+        "age": 35,
+        "student": false,
+        "hobbies": ["reading", "swimming", "painting"]
+    }
 ]
+

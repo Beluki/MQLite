@@ -1,6 +1,15 @@
 
 CHANGELOG
 
+* 2015/02/09:
+
+    - Added operators is, !is.
+
+    - The compiler no longer raises exceptions on unknown datatypes.
+      (useful when writing raw Python patterns, e.g.: datetime)
+
+    - The '*' wildcard accepts a list of keys as argument.
+
 * 2015/02/07:
 
     - Major operators overhaul.

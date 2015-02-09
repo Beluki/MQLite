@@ -7,6 +7,7 @@ Pattern match JSON like you query Freebase, using a simple MQL dialect.
 """
 
 
+import builtins
 import json
 import os
 import re
@@ -92,12 +93,12 @@ class MatchDict(object):
 
     The result is a dict containing all the matching keys/values.
     """
-    def __init__(self, matchers, constraints, directives, optional_keys, include_all_keys):
+    def __init__(self, matchers, constraints, directives, optional_keys, additional_keys):
         self.matchers = list(matchers.items())
         self.constraints = list(constraints.items())
         self.directives = directives
         self.optional_keys = optional_keys
-        self.include_all_keys = include_all_keys
+        self.additional_keys = additional_keys
 
     def match(self, data):
 
@@ -127,10 +128,15 @@ class MatchDict(object):
                 result[key] = current
 
         # add all the data keys to the result if needed:
-        if self.include_all_keys:
+        # (the compiler guarantees that the value is either '*' or a list)
+        if self.additional_keys == '*':
             for key, value in data.items():
                 if not key in result:
                     result[key] = value
+        else:
+            for key in self.additional_keys:
+                if key in data and not key in result:
+                    result[key] = data[key]
 
         return result
 
@@ -165,14 +171,14 @@ class MatchList(object):
                 if current is not NoMatch:
                     matcher_results.append(current)
 
-            # at least one match?
-            if len(matcher_results) == 0:
-                return NoMatch
-
             # apply directives for dictionaries:
             if isinstance(matcher, MatchDict):
                 for directive in matcher.directives:
                     matcher_results = directive.match(matcher_results)
+
+            # at least one match?
+            if len(matcher_results) == 0:
+                return NoMatch
 
             result += matcher_results
 
@@ -245,7 +251,7 @@ class ConstraintEqualTo(object):
 
 class ConstraintNotEqualTo(object):
     """
-    Tests that the data is not equal to a particular value.
+    Tests that the data is NOT equal to a particular value.
     (operator != in MQLite)
     """
     def __init__(self, value):
@@ -293,7 +299,7 @@ class ConstraintIn(object):
 
 class ConstraintNotIn(object):
     """
-    Tests that the data is not equal to any of a list of values.
+    Tests that the data is NOT equal to any of a list of values.
     (operator "!in" in MQLite)
     """
     def __init__(self, values):
@@ -325,6 +331,40 @@ class ConstraintNotContain(object):
 
     def match(self, data):
         return self.value not in data
+
+
+class ConstraintIs(object):
+    """
+    Tests that the data belongs to a particular type.
+    (operator "is" in MQLite)
+    """
+    def __init__(self, class_or_classname):
+
+        # JSON has no classes but we accept them for raw Python patterns:
+        if isinstance(class_or_classname, type):
+            self.theclass = class_or_classname
+        else:
+            self.theclass = getattr(builtins, class_or_classname)
+
+    def match(self, data):
+        return isinstance(data, self.theclass)
+
+
+class ConstraintNotIs(object):
+    """
+    Tests that the data does NOT belong to a particular type.
+    (operator "!is" in MQLite)
+    """
+    def __init__(self, class_or_classname):
+
+        # JSON has no classes but we accept them for raw Python patterns:
+        if isinstance(class_or_classname, type):
+            self.theclass = class_or_classname
+        else:
+            self.theclass = getattr(builtins, class_or_classname)
+
+    def match(self, data):
+        return not isinstance(data, self.theclass)
 
 
 # Directives:
@@ -396,6 +436,8 @@ class Compiler(object):
         '!in'      :  ConstraintNotIn,
         'contain'  :  ConstraintContain,
         '!contain' :  ConstraintNotContain,
+        'is'       :  ConstraintIs,
+        '!is'      :  ConstraintNotIs,
     }
 
     directives = {
@@ -434,7 +476,8 @@ class Compiler(object):
         if isinstance(pattern, list):
             return self.compile_list(pattern)
 
-        raise CompilerException('Unknown type: {}'.format(pattern))
+        # not a JSON type, rely on Python equality (e.g. for datetime):
+        return MatchEqual(pattern)
 
     def compile_none(self, pattern):
         """
@@ -479,21 +522,26 @@ class Compiler(object):
         directives = []
 
         optional_keys = set()
-        include_all_keys = False
+        additional_keys = []
 
         for key, value in pattern.items():
 
+            # * wildcard?
+            if key == '*':
+                if value == '*' or isinstance(value, list):
+                    additional_keys = value
+                else:
+                    raise CompilerException('*: value must be "*" (all keys) or a list of keys.')
+                continue
+
             # directive?
-            is_directive = False
             if key in self.directives:
                 directive = self.directives[key](value)
                 directives.append(directive)
-                is_directive = True
+                continue
 
             # constraint?
-            is_constraint = False
             constraint_parts = key.rsplit(' ', 1)
-
             if len(constraint_parts) == 2:
                 constraint_key, constraint_name = constraint_parts
 
@@ -506,27 +554,18 @@ class Compiler(object):
                         constraint = WrapConstraintsAnd(constraint, constraints[constraint_key])
 
                     constraints[constraint_key] = constraint
-                    is_constraint = True
+                    continue
 
             # regular matcher:
-            if not is_directive and not is_constraint:
 
-                # all keys?
-                if key == value == '*':
-                    include_all_keys = True
-                    continue
+            # optional key?
+            if len(key) > 1 and key.endswith('?'):
+                key = key[:-1]
+                optional_keys.add(key)
 
-                # optional?
-                if len(key) > 1 and key.endswith('?'):
-                    key = key[:-1]
-                    optional_keys.add(key)
-                    matchers[key] = self.compile(value)
-                    continue
+            matchers[key] = self.compile(value)
 
-                # normal key/value match:
-                matchers[key] = self.compile(value)
-
-        return MatchDict(matchers, constraints, directives, optional_keys, include_all_keys)
+        return MatchDict(matchers, constraints, directives, optional_keys, additional_keys)
 
     def compile_list(self, pattern):
         """
