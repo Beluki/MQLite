@@ -33,7 +33,7 @@ try:
 
 except ImportError:
     errln('MQLiteSH requires the following modules:')
-    errln('MQLite 2015.02.09+ - <https://github.com/Beluki/MQLite>')
+    errln('MQLite 2015.03.02+ - <https://github.com/Beluki/MQLite>')
     sys.exit(1)
 
 

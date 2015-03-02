@@ -1,21 +1,22 @@
 [
     {
         "name": "Anna",
-        "age": 23,
+        "age": 25,
         "student": true,
-        "grades": [{ "chemistry": "A", "math": "C" }],
+        "grades": { "chemistry": "A", "math": "C" },
         "hobbies": ["reading", "chess", "swimming"]
     },
     {
         "name": "James",
-        "age": 25,
+        "age": 23,
         "student": false,
         "hobbies": ["chess", "football", "basketball"]
     },
     {
         "name": "John",
         "age": 35,
-        "student": false,
+        "student": true,
+        "grades": { "chemistry": "C", "english": "A" },
         "hobbies": ["reading", "swimming", "painting"]
     }
 ]

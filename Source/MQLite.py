@@ -10,6 +10,7 @@ Pattern match JSON like you query Freebase, using a simple MQL dialect.
 import builtins
 import json
 import os
+import random
 import re
 import sys
 
@@ -26,6 +27,7 @@ from json import JSONDecoder
 # Matchers:
 # Nodes that return the data or NoMatch depending on a test.
 # Used to implement the basic pattern matching behavior.
+
 
 class _NoMatch(object):
     """
@@ -93,11 +95,10 @@ class MatchDict(object):
 
     The result is a dict containing all the matching keys/values.
     """
-    def __init__(self, matchers, constraints, directives, optional_keys, additional_keys):
+    def __init__(self, matchers, constraints, directives, additional_keys):
         self.matchers = list(matchers.items())
         self.constraints = list(constraints.items())
         self.directives = directives
-        self.optional_keys = optional_keys
         self.additional_keys = additional_keys
 
     def match(self, data):
@@ -120,12 +121,9 @@ class MatchDict(object):
             current = matcher.match(data[key])
 
             if current is NoMatch:
-                if key in self.optional_keys:
-                    result[key] = None
-                else:
-                    return NoMatch
-            else:
-                result[key] = current
+                return NoMatch
+
+            result[key] = current
 
         # add all the data keys to the result if needed:
         # (the compiler guarantees that the value is either '*' or a list)
@@ -273,18 +271,6 @@ class ConstraintRegex(object):
         return re.match(self.regex, data) is not None
 
 
-class ConstraintNotRegex(object):
-    """
-    Tests that the data does NOT match a regular expression.
-    (operator "!regex" in MQLite)
-    """
-    def __init__(self, regex):
-        self.regex = regex
-
-    def match(self, data):
-        return re.match(self.regex, data) is None
-
-
 class ConstraintIn(object):
     """
     Tests that the data is equal to at least one element of a list of values.
@@ -295,18 +281,6 @@ class ConstraintIn(object):
 
     def match(self, data):
         return data in self.values
-
-
-class ConstraintNotIn(object):
-    """
-    Tests that the data is NOT equal to any of a list of values.
-    (operator "!in" in MQLite)
-    """
-    def __init__(self, values):
-        self.values = values
-
-    def match(self, data):
-        return data not in self.values
 
 
 class ConstraintContain(object):
@@ -321,18 +295,6 @@ class ConstraintContain(object):
         return self.value in data
 
 
-class ConstraintNotContain(object):
-    """
-    Tests that the data does NOT contain a value.
-    (operator "!contain" in MQLite)
-    """
-    def __init__(self, value):
-        self.value = value
-
-    def match(self, data):
-        return self.value not in data
-
-
 class ConstraintIs(object):
     """
     Tests that the data belongs to a particular type.
@@ -340,61 +302,140 @@ class ConstraintIs(object):
     """
     def __init__(self, class_or_classname):
 
-        # JSON has no classes but we accept them for raw Python patterns:
-        if isinstance(class_or_classname, type):
-            self.theclass = class_or_classname
-        else:
+        # a string means a builtin type:
+        if isinstance(class_or_classname, str):
             self.theclass = getattr(builtins, class_or_classname)
+
+        # something isinstance already understands
+        # (JSON has no classes but we accept them for raw Python patterns):
+        else:
+            self.theclass = class_or_classname
 
     def match(self, data):
         return isinstance(data, self.theclass)
 
 
-class ConstraintNotIs(object):
+class ConstraintMatch(object):
     """
-    Tests that the data does NOT belong to a particular type.
-    (operator "!is" in MQLite)
+    Tests that the data can be matched with a matcher node.
+    (operator "match" in MQLite)
     """
-    def __init__(self, class_or_classname):
-
-        # JSON has no classes but we accept them for raw Python patterns:
-        if isinstance(class_or_classname, type):
-            self.theclass = class_or_classname
-        else:
-            self.theclass = getattr(builtins, class_or_classname)
+    def __init__(self, matcher):
+        self.matcher = matcher
 
     def match(self, data):
-        return not isinstance(data, self.theclass)
+        return self.matcher.match(data) is not NoMatch
+
+
+# Constraint prefixes:
+
+class ConstraintPrefixNot(object):
+    """
+    Negates a constraint.
+    """
+    def __init__(self, constraint):
+        self.constraint = constraint
+
+    def match(self, data):
+        return not self.constraint.match(data)
+
+
+# Constraint suffixes:
+
+class ConstraintSuffixAll(object):
+    """
+    Matches if all the constraints in a list match some data.
+    """
+    def __init__(self, constraints):
+        self.constraints = constraints
+
+    def match(self, data):
+        for constraint in self.constraints:
+            if not constraint.match(data):
+                return False
+
+        return True
+
+
+class ConstraintSuffixAny(object):
+    """
+    Matches if at least one of the constraints in a list match some data.
+    """
+    def __init__(self, constraints):
+        self.constraints = constraints
+
+    def match(self, data):
+        for constraint in self.constraints:
+            if constraint.match(data):
+                return True
+
+        return False
+
+
+class ConstraintSuffixOne(object):
+    """
+    Matches if only one of the constraints in a list match some data.
+    """
+    def __init__(self, constraints):
+        self.constraints = constraints
+
+    def match(self, data):
+        one_matched = False
+
+        for constraint in self.constraints:
+            if constraint.match(data):
+                if one_matched:
+                    return False
+
+                one_matched = True
+
+        return one_matched
 
 
 # Directives:
-# Nodes that transform the data into something else.
+# Nodes that transform results into something else.
+# Directives must validate their input values.
 
 class DirectiveLimit(object):
     """
-    Take at most N elements from data.
+    Take N elements from the results.
     """
     def __init__(self, limit):
         self.limit = limit
 
     def match(self, data):
-        return data[0: self.limit]
+        return data[0 : self.limit]
 
 
-class DirectiveSortByKey(object):
+class DirectiveOrder(object):
     """
-    Sort dictionaries by a given key.
+    Return results in reverse or random order.
     """
-    def __init__(self, key):
-        if len(key) > 1 and key.startswith('-'):
-            self.reverse = True
-            self.key = key[1:]
-        else:
-            self.reverse = False
-            self.key = key
+    def __init__(self, order):
+        if not order in ['random', 'reverse']:
+            raise CompilerException('__order__: expected "random" or "reverse" as argument.')
+
+        self.order = order
 
     def match(self, data):
-        return sorted(data, key = lambda value: value[self.key], reverse = self.reverse)
+        if self.order == 'random':
+            random.shuffle(data)
+            return data
+
+        if self.order == 'reverse':
+            data.reverse()
+            return data
+
+
+class DirectiveSort(object):
+    """
+    Sort results by a given key.
+    """
+    def __init__(self, key):
+        self.key = key
+
+    def match(self, data):
+        return sorted(data, key = lambda value: value[self.key])
 
 
 # Wrappers:
@@ -413,6 +454,21 @@ class WrapConstraintsAnd(object):
         return self.constraint_a.match(data) and self.constraint_b.match(data)
 
 
+# Compiler utils:
+
+def split_suffix_word(text, words):
+    """
+    Split "this is a text word" into ["this is a text", "word"]
+    using a list of possible words.
+    """
+    for word in words:
+        # make sure there is one space separating the word
+        if text.endswith(' ' + word):
+            return text.rsplit(' ', 1)
+
+    return text, ''
+
+
 # Compiler:
 
 class CompilerException(Exception):
@@ -424,26 +480,38 @@ class Compiler(object):
     The MQLite compiler.
     """
     constraints = {
-        '>'        :  ConstraintMoreThan,
-        '>='       :  ConstraintMoreOrEqualTo,
-        '<'        :  ConstraintLessThan,
-        '<='       :  ConstraintLessOrEqualTo,
-        '=='       :  ConstraintEqualTo,
-        '!='       :  ConstraintNotEqualTo,
-        'regex'    :  ConstraintRegex,
-        '!regex'   :  ConstraintNotRegex,
-        'in'       :  ConstraintIn,
-        '!in'      :  ConstraintNotIn,
-        'contain'  :  ConstraintContain,
-        '!contain' :  ConstraintNotContain,
-        'is'       :  ConstraintIs,
-        '!is'      :  ConstraintNotIs,
+        '>'       :  ConstraintMoreThan,
+        '>='      :  ConstraintMoreOrEqualTo,
+        '<'       :  ConstraintLessThan,
+        '<='      :  ConstraintLessOrEqualTo,
+        '=='      :  ConstraintEqualTo,
+        '!='      :  ConstraintNotEqualTo,
+        'regex'   :  ConstraintRegex,
+        'in'      :  ConstraintIn,
+        'contain' :  ConstraintContain,
+        'is'      :  ConstraintIs,
+        'match'   :  ConstraintMatch,
     }
+
+
+    constraint_prefixes = {
+        'not': ConstraintPrefixNot,
+    }
+
+
+    constraint_suffixes = {
+        'all': ConstraintSuffixAll,
+        'any': ConstraintSuffixAny,
+        'one': ConstraintSuffixOne,
+    }
+
 
     directives = {
         '__limit__' : DirectiveLimit,
-        '__sort__'  : DirectiveSortByKey,
+        '__order__' : DirectiveOrder,
+        '__sort__'  : DirectiveSort,
     }
+
 
     def __init__(self):
         pass
@@ -476,8 +544,8 @@ class Compiler(object):
         if isinstance(pattern, list):
             return self.compile_list(pattern)
 
-        # not a JSON type, rely on Python equality (e.g. for datetime):
-        return MatchEqual(pattern)
+        # not a JSON type:
+        return self.compile_unknown(pattern)
 
     def compile_none(self, pattern):
         """
@@ -520,8 +588,6 @@ class Compiler(object):
         matchers = OrderedDict()
         constraints = OrderedDict()
         directives = []
-
-        optional_keys = set()
         additional_keys = []
 
         for key, value in pattern.items():
@@ -541,31 +607,49 @@ class Compiler(object):
                 continue
 
             # constraint?
-            constraint_parts = key.rsplit(' ', 1)
-            if len(constraint_parts) == 2:
-                constraint_key, constraint_name = constraint_parts
+            constraint_key, suffix = split_suffix_word(key, self.constraint_suffixes.keys())
+            constraint_key, constraint_name = split_suffix_word(constraint_key, self.constraints.keys())
+            constraint_key, prefix = split_suffix_word(constraint_key, self.constraint_prefixes.keys())
 
-                # known constraint?
-                if constraint_name in self.constraints:
-                    constraint = self.constraints[constraint_name](value)
+            if constraint_key and constraint_name:
+                constraint_class = self.constraints[constraint_name]
 
-                    # key already in the dict? combine with the previous constraint:
-                    if constraint_key in constraints:
-                        constraint = WrapConstraintsAnd(constraint, constraints[constraint_key])
+                # suffix?
+                if suffix:
+                    if not isinstance(value, list):
+                        raise CompilerException('{} expected a list of values.'.format(suffix))
 
-                    constraints[constraint_key] = constraint
-                    continue
+                    if constraint_class == ConstraintMatch:
+                        values = [self.compile(it) for it in value]
+                    else:
+                        values = value
+
+                    suffix_class = self.constraint_suffixes[suffix]
+                    constraint = suffix_class([constraint_class(it) for it in values])
+
+                # no suffix, value is a single element:
+                else:
+                    if constraint_class == ConstraintMatch:
+                        value = self.compile(value)
+
+                    constraint = constraint_class(value)
+
+                # prefix?
+                if prefix:
+                    prefix_class = self.constraint_prefixes[prefix]
+                    constraint = prefix_class(constraint)
+
+                # key already in the dict? combine with the previous constraint:
+                if constraint_key in constraints:
+                    constraint = WrapConstraintsAnd(constraint, constraints[constraint_key])
+
+                constraints[constraint_key] = constraint
+                continue
 
             # regular matcher:
-
-            # optional key?
-            if len(key) > 1 and key.endswith('?'):
-                key = key[:-1]
-                optional_keys.add(key)
-
             matchers[key] = self.compile(value)
 
-        return MatchDict(matchers, constraints, directives, optional_keys, additional_keys)
+        return MatchDict(matchers, constraints, directives, additional_keys)
 
     def compile_list(self, pattern):
         """
@@ -577,6 +661,12 @@ class Compiler(object):
 
         matchers = [self.compile(value) for value in pattern]
         return MatchList(matchers)
+
+    def compile_unknown(self, pattern):
+        """
+        Not a JSON type, rely on Python equality (e.g. for datetime).
+        """
+        return MatchEqual(pattern)
 
 
 # Higher-level pattern classes:
