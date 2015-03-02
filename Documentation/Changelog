@@ -1,6 +1,17 @@
 
 CHANGELOG
 
+* 2015/03/02:
+
+    - Removed !is, !regex, !in, !contain and implemented generic constraint
+      negation instead. e.g.: { "key not constraint": value }.
+
+    - Unknown values are now handled with MatchEqual(value) so that Python
+      types such as datetime can be used in raw patterns.
+
+    - Implemented constraint prefixes (not) and suffixes (all/any/one)
+      to express not/and/or/xor in a single constraint.
+
 * 2015/02/09:
 
     - Added operators is, !is.
