@@ -92,7 +92,7 @@ Basic pattern matching rules:
 
 Here are some examples (using MQLiteSH with the above dataset as input)
 
-```
+```json
 # give me the name and the age for everyone:
 >>> [{ "name": null, "age": null }]
 [
@@ -158,7 +158,7 @@ Unlike basic patterns, constraints don't add anything to the final query result.
 
 Examples:
 
-```
+```json
 # who is more than 25 years old?
 >>> [{ "name": null, "age >": 25 }]
 [
