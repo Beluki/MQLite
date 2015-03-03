@@ -20,6 +20,7 @@ $ curl https://api.github.com/users/Beluki/repos | MQLite.py '[{"name": null, "f
         "name": "MQLite"
     }
 ]
+```
 
 ## Status
 
