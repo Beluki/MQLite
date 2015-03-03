@@ -151,7 +151,7 @@ Implemented constraints are:
 
 * `is` tests that the data is of a particular type.
 
-* `match` like basic pattern matching.
+* `match` recursively matches it's argument.
 
 Constrains are written after the key name they apply to in the query dict.
 Unlike basic patterns, constraints don't add anything to the final query result.
@@ -264,7 +264,7 @@ Examples:
 ```
 
 In both MQL and MQLite it's impossible to write and OR clause using
-multiple keys, e.g. age > 20 or name in [...]. You need to write multiple
+multiple keys, e.g. `age > 20 or name in ...`. You need to write multiple
 queries to do this.
 
 ## MQLite specification: directives
@@ -355,11 +355,9 @@ Examples:
 
 Note that the order of the directives is important. If `__limit__` is specified
 before `__sort__`, only the subset of the results returned by limit will be
-considered for sorting.
-
-MQLite uses an OrderedDict under the hood to maintain the query order in JSON
-patterns. Python RAW patterns must use OrderedDicts as well when the order
-is important.
+considered for sorting. MQLite uses an OrderedDict under the hood to maintain the
+query order in JSON patterns. Python RAW patterns must use OrderedDicts as well
+when the order is important.
 
 ## Status
 
