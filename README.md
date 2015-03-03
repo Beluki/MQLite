@@ -94,7 +94,7 @@ Here are some examples (using MQLiteSH with the above dataset as input)
 
 ```
 # give me the name and the age for everyone:
->>> [{"name": null, "age": null}]
+>>> [{ "name": null, "age": null }]
 [
     {
         "age": 25,
@@ -111,7 +111,7 @@ Here are some examples (using MQLiteSH with the above dataset as input)
 ]
 
 # find the names of those that are students:
->>> [{"name": null, "student": true}]
+>>> [{ "name": null, "student": true }]
 [
     {
         "student": true,
@@ -124,7 +124,7 @@ Here are some examples (using MQLiteSH with the above dataset as input)
 ]
 
 # who plays both chess and basketball?
->>> [{"name": null, "hobbies": ["chess", "basketball"]}]
+>>> [{ "name": null, "hobbies": ["chess", "basketball"] }]
 [
     {
         "name": "James",
@@ -143,7 +143,7 @@ make it possible to match on arbitrary operations.
 
 Implemented constraints are:
 
-* >, >=, <, <=, ==, != compare data with the usual arithmetic operations.
+* \>, >=, <, <=, ==, != compare data with the usual arithmetic operations.
 
 * "contain", "in" test that the data contains a value or is contained in a set of values.
 
@@ -160,7 +160,7 @@ Examples:
 
 ```
 # who is more than 25 years old?
->>> [{"name": null, "age >": 25}]
+>>> [{ "name": null, "age >": 25 }]
 [
     {
         "name": "John"
@@ -168,7 +168,7 @@ Examples:
 ]
 
 # give me the names of the people whose name starts with a J
->>> [{"name": null, "name regex": "^J"}]
+>>> [{ "name": null, "name regex": "^J" }]
 [
     {
         "name": "James"
@@ -179,7 +179,7 @@ Examples:
 ]
 
 # what are the hobbies of John and Anna?
->>> [{"name in": ["John", "Anna"], "name": null, "hobbies": null}]
+>>> [{ "name in": ["John", "Anna"], "name": null, "hobbies": null }]
 [
     {
         "name": "Anna",
@@ -200,7 +200,7 @@ Examples:
 ]
 
 # who got an A in chemistry? what's his/her math grade?
->>> [{"name": null, "grades match": {"chemistry": "A"}, "grades": {"math": null}}]
+>>> [{ "name": null, "grades match": {"chemistry": "A"}, "grades": {"math": null} }]
 [
     {
         "name": "Anna",
@@ -209,6 +209,7 @@ Examples:
         }
     }
 ]
+```
 
 ## Status
 
