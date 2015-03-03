@@ -1,10 +1,38 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
+
+"""
+MQTest.
+A test suite for MQLite.
+"""
+
+
 import collections
 import sys
 
-from MQLite import NoMatch, Pattern
+
+# Information and error messages:
+
+def outln(line):
+    """ Write 'line' to stdout, using the platform encoding and newline format. """
+    print(line, flush = True)
+
+
+def errln(line):
+    """ Write 'line' to stderr, using the platform encoding and newline format. """
+    print('MQTest.py: error:', line, file = sys.stderr, flush = True)
+
+
+# Non-builtin imports:
+
+try:
+    from MQLite import NoMatch, Pattern
+
+except ImportError:
+    errln('MQTest requires the following modules:')
+    errln('MQLite 2015.03.02+ - <https://github.com/Beluki/MQLite>')
+    sys.exit(1)
 
 
 # Input:
@@ -181,17 +209,25 @@ class Test20(object):
     pattern = [{ "name": None, "age in": set([20, 21, 22, 23]) }]
     result = [{"name": "James"}]
 
+class Test21(object):
+    """
+    null returns the collection as is.
+    """
+    pattern = None
+    result = DATA
 
-# Information and error messages:
+class Test22(object):
+    """
+    __order__ directive.
+    """
+    pattern = collections.OrderedDict(age = None)
 
-def outln(line):
-    """ Write 'line' to stdout, using the platform encoding and newline format. """
-    print(line, flush = True)
+    # order dependent, we want __sort__ to happen before __limit__:
+    pattern["__sort__"] = "age"
+    pattern["__order__"] = "reverse"
 
-
-def errln(line):
-    """ Write 'line' to stderr, using the platform encoding and newline format. """
-    print(line, file = sys.stderr, flush = True)
+    pattern = [pattern]
+    result = [{"age": 35}, {"age": 25}, {"age": 23}]
 
 
 # Run the tests:
@@ -207,7 +243,6 @@ def main():
         if result != test.result:
             errln('Test: {}'.format(test.__doc__.strip()))
             errln('Expected: {} got: {}'.format(test.result, result))
-            errln('')
 
             errors += 1
 
