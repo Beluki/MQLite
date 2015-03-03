@@ -8,19 +8,27 @@ as Freebase).
 
 [MQL]: http://mql.freebaseapps.com/index.html
 
-Here is an example, using the Github API to find repositories that have forks:
+MQLite is a simple program, it reads JSON from stdin and outputs JSON to
+stdout. The pattern is specified as a parameter. Here is an example,
+using the Github API to find repositories that have forks:
 
 ```bash
-$ curl https://api.github.com/users/Beluki/repos | MQLite.py '[{"name": null, "forks >": 0}]'
+$ curl https://api.github.com/users/Beluki/repos |
+| MQlite.py '[{"name": null, "forks": null, "forks >": 0}]'
 [
     {
-        "name": "GaGa"
+        "name": "GaGa",
+        "forks": 2
     },
     {
-        "name": "MQLite"
+        "name": "MQLite",
+        "forks": 1
     }
 ]
 ```
+
+Also included is MQLiteSH, an interactive shell that can be used to easily
+query local JSON files.
 
 ## Status
 
