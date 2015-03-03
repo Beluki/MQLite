@@ -151,7 +151,7 @@ Implemented constraints are:
 
 * `is` tests that the data is of a particular type.
 
-* `match` recursively matches it's argument.
+* `match` recursively matches its argument.
 
 Constrains are written after the key name they apply to in the query dict.
 Unlike basic patterns, constraints don't add anything to the final query result.
