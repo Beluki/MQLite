@@ -4,11 +4,11 @@
 MQLite is a small pattern matching language loosely based on [MQL][], the
 Metaweb Query Language. The main difference is that MQLite can be used
 to pattern match arbitrary JSON data instead of a particular schema (such
-as Freebase).
+as [Freebase][]).
 
 [MQLite][] is a simple program, it reads JSON from stdin and outputs JSON to
 stdout. The pattern is specified as a parameter. Here is an example,
-using the Github API to find repositories that have forks:
+using the [Github API][] to find repositories that have forks:
 
 ```bash
 $ curl https://api.github.com/users/Beluki/repos |
@@ -25,9 +25,11 @@ $ curl https://api.github.com/users/Beluki/repos |
 ]
 ```
 
-Also included is [MQLiteSH][], an interactive shell that can be used to easily
-query local JSON files.
+Also included is [MQLiteSH][], an interactive shell that can be used to
+easily query local JSON files.
 
+[Freebase]: https://www.freebase.com
+[Github API]: https://developer.github.com/v3/
 [MQL]: http://mql.freebaseapps.com/index.html
 [MQLite]: https://github.com/Beluki/MQLite/blob/master/Source/MQLite.py
 [MQLiteSH]: https://github.com/Beluki/MQLite/blob/master/Source/MQLiteSH.py
@@ -48,8 +50,8 @@ $ python setup.py install
 ## MQLite specification
 
 The MQLite language is very similar to the MQL read API with a few changes
-here and there (needed to match arbitrary JSON). The best way to learn it is
-by example.
+here and there (needed to match arbitrary JSON). The best way to learn it
+is by example.
 
 All the examples in this README use the following JSON data as input:
 
@@ -80,7 +82,7 @@ All the examples in this README use the following JSON data as input:
 
 Basic pattern matching rules:
 
-* null matches anything.
+* `null` matches anything.
 
 * booleans, numbers and strings match themselves.
 
@@ -90,7 +92,7 @@ Basic pattern matching rules:
 * dicts match another dict if all the keys in the query dict
   are present in the data and the values for those keys match.
 
-Here are some examples (using MQLiteSH with the above dataset as input)
+Here are some examples (using MQLiteSH with the above dataset as input).
 
 ```json
 # give me the name and the age for everyone:
@@ -263,9 +265,12 @@ Examples:
 ]
 ```
 
-In both MQL and MQLite it's impossible to write and OR clause using
+In both MQL and MQLite it's impossible to write an OR clause using
 multiple keys, e.g. `age > 20 or name in ...`. You need to write multiple
-queries to do this.
+queries to do it.
+
+Other than that it's possible to specify as many constraints as you
+want for each key, with or without prefixes/suffixes.
 
 ## MQLite specification: directives
 
@@ -355,9 +360,45 @@ Examples:
 
 Note that the order of the directives is important. If `__limit__` is specified
 before `__sort__`, only the subset of the results returned by limit will be
-considered for sorting. MQLite uses an OrderedDict under the hood to maintain the
-query order in JSON patterns. Python RAW patterns must use OrderedDicts as well
-when the order is important.
+considered for sorting. MQLite uses an [OrderedDict][] under the hood to maintain the
+query order in JSON patterns.
+
+[OrderedDict]: https://docs.python.org/3/library/collections.html#collections.OrderedDict
+
+## Command-line options
+
+MQLite has some options that can be used to change the behavior:
+
+* `--strict` exits with an error message and status 1 when there are no matches
+  instead of producing an empty output. Useful for scripts.
+
+*  `--ascii` escapes non-ascii characters in output.
+
+*  `--indent N` uses N spaces of indentation for output. Use -1 to disable
+   indentation.
+
+* `--sort-keys` sorts dictionary keys by name before printing the results.
+
+* `--newline [dos, mac, unix, system]` changes the newline format.
+  I tend to use Unix newlines everywhere, even on Windows. The default is
+  `system`, which uses the current platform newline format.
+
+MQLiteSH has the same options except `--strict` (no matches don't produce output)
+and `--newline` (it always uses system newlines).
+
+## Portability
+
+Information and error messages are written to stdout and stderr
+respectively, using the current platform newline format and encoding.
+
+The input JSON is expected to be UTF-8. Both MQLite and MQLiteSH accept input
+with or without a BOM signature.
+
+The output JSON is always written in UTF-8 without BOM. When using the same
+`--newline format`, it should be byte by byte identical between platforms.
+
+MQLite is tested on Windows 7 and 8 and on Debian (both x86 and x86-64)
+using Python 3.3+. Older versions are not supported.
 
 ## Status
 
