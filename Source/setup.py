@@ -4,13 +4,14 @@ from setuptools import setup
 
 setup(
     name = 'MQLite',
-    version = '2015.03.02',
+    version = '2015.04.04',
     url = 'https://github.com/Beluki/MQLite',
     license = 'See Documentation/License',
     author = 'Beluki',
     author_email = 'beluki@gmx.com',
     description = 'Pattern match JSON like you query Freebase, using a simple MQL dialect.',
     py_modules = ['MQLite'],
+    scripts = ['MQLite.py', 'MQLiteSH.py'],
     zip_safe = False,
     platforms = 'any',
     classifiers = [

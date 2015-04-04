@@ -47,6 +47,8 @@ $ cd Source
 $ python setup.py install
 ```
 
+This will install MQLite as a module and both MQLite and MQLiteSH as scripts.
+
 ## MQLite specification
 
 The MQLite language is very similar to the MQL read API with a few changes

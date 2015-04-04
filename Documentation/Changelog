@@ -1,6 +1,11 @@
 
 CHANGELOG
 
+* 2015/04/04:
+
+    - Both MQLite and MQLiteSH are now installed as scripts
+      when running setuptools.
+
 * 2015/03/02:
 
     - Removed !is, !regex, !in, !contain and implemented generic constraint

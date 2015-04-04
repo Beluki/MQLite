@@ -31,7 +31,7 @@ try:
 
 except ImportError:
     errln('MQTest requires the following modules:')
-    errln('MQLite 2015.03.02+ - <https://github.com/Beluki/MQLite>')
+    errln('MQLite 2015.04.04+ - <https://github.com/Beluki/MQLite>')
     sys.exit(1)
 
 
@@ -222,7 +222,7 @@ class Test22(object):
     """
     pattern = collections.OrderedDict(age = None)
 
-    # order dependent, we want __sort__ to happen before __limit__:
+    # order dependent, we want __sort__ to happen before __order__:
     pattern["__sort__"] = "age"
     pattern["__order__"] = "reverse"
 
