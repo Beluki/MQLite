@@ -31,8 +31,9 @@ easily query local JSON files.
 [Freebase]: https://www.freebase.com
 [Github API]: https://developer.github.com/v3/
 [MQL]: http://mql.freebaseapps.com/index.html
-[MQLite]: https://github.com/Beluki/MQLite/blob/master/Source/MQLite.py
-[MQLiteSH]: https://github.com/Beluki/MQLite/blob/master/Source/MQLiteSH.py
+
+[MQLite]: Source/MQLite.py
+[MQLiteSH]: Source/MQLiteSH.py
 
 ## Installation
 
@@ -414,6 +415,5 @@ I plan no further development on it other than maintenance.
 Like all my hobby projects, this is Free Software. See the [Documentation][]
 folder for more information. No warranty though.
 
-[Documentation]: https://github.com/Beluki/MQLite/tree/master/Documentation
-[Examples]: https://github.com/Beluki/MQLite/tree/master/Examples
+[Documentation]: Documentation
 
